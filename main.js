@@ -1,3 +1,5 @@
+var electronInstaller = require('electron-winstaller');
+
 const electron = require('electron')
 const {shell} = require('electron');
 // Module to control application life.
