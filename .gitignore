@@ -1,1 +1,9 @@
 node_modules
+
+.idea/
+
+dist/
+
+agent/
+
+electron-builder.yml
