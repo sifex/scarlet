@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Double clicking the Scarlet agent now opens the Scarlet UI
+- Scarlet Installation & Auto Update, Scarlet now appears in Programs & can be uninstalled
 
 ### Changed
 - Scarlet no longer requires Administrative runtime due to Scarlet local websocket port being changed 
