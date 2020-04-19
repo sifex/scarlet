@@ -4,3 +4,6 @@
 [submodule "scarlet-agent"]
 	path = scarlet-agent
 	url = git@github.com:sifex/scarlet-agent.git
+[submodule "scarlet-api"]
+	path = scarlet-api
+	url = https://github.com/sifex/scarlet-api
