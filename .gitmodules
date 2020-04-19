@@ -1,9 +1,12 @@
 [submodule "scarlet-ui"]
 	path = scarlet-ui
 	url = git@github.com:sifex/scarlet-ui.git
+	branch = master
 [submodule "scarlet-agent"]
 	path = scarlet-agent
 	url = git@github.com:sifex/scarlet-agent.git
+	branch = master
 [submodule "scarlet-api"]
 	path = scarlet-api
 	url = https://github.com/sifex/scarlet-api
+	branch = master
