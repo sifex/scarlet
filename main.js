@@ -33,7 +33,7 @@ function createWindow() {
     mainWindow.loadURL(
         isDev()
             ? 'http://localhost:3000/mods/electron/?username=Omega'
-            : `https://staging.australianarmedforces.org/mods/electron/?username=Omega`,
+            : `https://staging.scarlet.australianarmedforces.org/key/electron/`,
         {
             extraHeaders: 'pragma: no-cache\n'
         })
@@ -69,6 +69,10 @@ function createWindow() {
 
     ipcMain.on('restart_app', () => {
         autoUpdater.quitAndInstall();
+    });
+
+    ipcMain.on('quit', () => {
+        mainWindow = null
     });
 }
 
