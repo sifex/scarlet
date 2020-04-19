@@ -1,4 +1,3 @@
-
 const { autoUpdater } = require("electron-updater")
 const {app, BrowserWindow, shell, ipcMain} = require('electron')
 const fs = require('fs')
@@ -32,8 +31,8 @@ function createWindow() {
 
     mainWindow.loadURL(
         isDev()
-            ? 'http://localhost:3000/mods/electron/?username=Omega'
-            : `https://staging.scarlet.australianarmedforces.org/key/electron/`,
+            ? 'https://staging.scarlet.australianarmedforces.org/key/electron/'
+            : 'https://scarlet.australianarmedforces.org/key/electron/',
         {
             extraHeaders: 'pragma: no-cache\n'
         })

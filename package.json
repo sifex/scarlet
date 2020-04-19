@@ -1,6 +1,6 @@
 {
   "name": "Scarlet",
-  "version": "1.2.7",
+  "version": "1.3.0",
   "author": "Australian Armed Forces <omega@sinn.io>",
   "description": "Scarlet is a mod updater for the Australian Armed Forces",
   "main": "main.js",
@@ -10,8 +10,8 @@
     "deploy": "electron-builder build --win --publish always --config electron-builder.yml"
   },
   "repository": {
-    "type" : "git",
-    "url" : "https://github.com/sifex/scarlet.git"
+    "type": "git",
+    "url": "https://github.com/sifex/scarlet.git"
   },
   "private": true,
   "productName": "Scarlet",
@@ -22,28 +22,5 @@
   "devDependencies": {
     "electron": "^8.2.3",
     "electron-builder": "^22.5.1"
-  },
-  "build": {
-    "appId": "com.scarlet.Updater",
-    "files": [
-      "**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "./agent/",
-        "to": "agent",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "publish": [
-        "github"
-      ]
-    }
   }
 }
