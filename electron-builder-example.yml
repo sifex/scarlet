@@ -1,0 +1,11 @@
+appId: com.aaf.ScarletUpdater
+publish:
+  provider: github
+  token: [[ GITHUB_TOKEN ]]
+files:
+  - "**/*"
+extraResources:
+  - from: "./agent/"
+    to: "agent"
+    filter:
+      - "**/*"

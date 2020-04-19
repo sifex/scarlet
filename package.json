@@ -1,13 +1,17 @@
 {
   "name": "Scarlet",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "author": "Omega <omega@sinn.io>",
   "description": "Scarlet is a mod updater for the Australian Armed Forces",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder build --win --publish never",
-    "deploy": "electron-builder build --win --publish always"
+    "build": "electron-builder build --win --publish never --config electron-builder.yml",
+    "deploy": "electron-builder build --win --publish always --config electron-builder.yml"
+  },
+  "repository": {
+    "type" : "git",
+    "url" : "https://github.com/sifex/scarlet.git"
   },
   "private": true,
   "productName": "Scarlet",
