@@ -1,4 +1,4 @@
-<img src="https://i.imgur.com/V1wY5Pz.png" height="50">
+<img src="https://australianarmedforces.org/mods/images/og_image.png" />
 
 # Scarlet
 
