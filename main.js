@@ -1,18 +1,29 @@
 const { autoUpdater } = require("electron-updater")
-const {app, BrowserWindow, shell, ipcMain} = require('electron')
+const {app, BrowserWindow, shell, ipcMain, dialog} = require('electron')
 const fs = require('fs')
 
 let WebSocket = require('ws')
-let currentWindow
+
+/**
+ * Main Window
+ */
+let mainWindow
+
+/**
+ *
+ */
+let deepLinkingURL
 
 let isSingleInstance = app.requestSingleInstanceLock()
 if (!isSingleInstance) {
     app.quit()
 }
 
-function isDev() {
-    return process.argv[2] === '--dev';
-}
+let isDev = () => process.argv[2] === '--dev'
+
+let scarletURI = isDev()
+    ? 'http://192.168.88.58/'
+    : 'https://scarlet.australianarmedforces.org/'
 
 function createWindow() {
     // Create the browser window.
@@ -24,28 +35,27 @@ function createWindow() {
         icon: __dirname + '/scarlet.ico',
         show: false,
         frame: false,
+        transparent: true,
+        // frame: false
         webPreferences: {
-            nodeIntegration: true
+            nodeIntegration: true,
+            contextIsolation: false,
+            enableRemoteModule: false,
         }
     })
 
-    mainWindow.loadURL(
-        isDev()
-            ? 'https://staging.scarlet.australianarmedforces.org/key/electron/'
-            : 'https://scarlet.australianarmedforces.org/key/electron/',
+    mainWindow.loadURL(scarletURI + 'electron/intro/',
         {
             extraHeaders: 'pragma: no-cache\n'
         })
-    currentWindow = mainWindow
 
     let websocket = new WebSocket("ws://localhost:2074");
     websocket.onerror = function (evt) {
-
         const executablePath = fs.existsSync(__dirname + "/agent/Scarlet.exe")
             ? __dirname + "/agent/Scarlet.exe" // Development Version
             : __dirname + "/../../resources/agent/Scarlet.exe";  // Production Version
 
-        shell.openItem(executablePath);
+        // shell.openItem(executablePath); // TODO Uncomment before prod
     };
 
     mainWindow.once('ready-to-show', () => {
@@ -58,21 +68,35 @@ function createWindow() {
         mainWindow = null
     })
 
-    autoUpdater.on('update-available', () => {
-        mainWindow.webContents.send('update_available');
-    });
+    /**
+     * Auto Update
+     */
 
-    autoUpdater.on('update-downloaded', () => {
-        mainWindow.webContents.send('update_downloaded');
-    });
+    autoUpdater.on('update-available', () => { mainWindow.webContents.send('update_available'); });
+    autoUpdater.on('update-downloaded', () => { mainWindow.webContents.send('update_downloaded'); });
+    ipcMain.on('restart_app', () => { autoUpdater.quitAndInstall(); });
 
-    ipcMain.on('restart_app', () => {
-        autoUpdater.quitAndInstall();
+    /**
+     * Electron Controls
+     */
+    ipcMain.on('close', () => { mainWindow.close() });
+    ipcMain.on('minimise', () => { mainWindow.minimize() });
+    ipcMain.on('steam_login', () => {
+        shell.openExternal(scarletURI + 'browser/steam/verify')
     });
 
     ipcMain.on('quit', () => {
         mainWindow = null
     });
+
+    app.on('open-url', (event, url) => {
+        let token = url.replace('scarlet://', '')
+
+        mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token,
+            {
+                extraHeaders: 'pragma: no-cache\n'
+            })
+    })
 }
 
 app.whenReady().then(createWindow)
