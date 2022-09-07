@@ -7,3 +7,5 @@ dist/
 agent/
 
 electron-builder.yml
+
+.DS_Store

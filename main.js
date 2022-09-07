@@ -1,33 +1,42 @@
 const { autoUpdater } = require("electron-updater")
 const {app, BrowserWindow, shell, ipcMain, dialog} = require('electron')
 const fs = require('fs')
+const path = require('path')
 
 let WebSocket = require('ws')
+
+const { Deeplink } = require('electron-deeplink');
+
+/**
+ * Setup
+ */
+
+// Dev
+let isDev = () => process.argv[2] === '--dev'
+
+let mainWindow
+
+// URL Handler
+const protocol = isDev ? 'scarlet-dev' : 'scarlet';
+const deeplink = new Deeplink({ app, mainWindow, protocol, isDev });
+
+// Single Instance
+if (!app.requestSingleInstanceLock()) { app.quit() }
+
+
 
 /**
  * Main Window
  */
-let mainWindow
 
-/**
- *
- */
-let deepLinkingURL
-
-let isSingleInstance = app.requestSingleInstanceLock()
-if (!isSingleInstance) {
-    app.quit()
-}
-
-let isDev = () => process.argv[2] === '--dev'
 
 let scarletURI = isDev()
-    ? 'http://192.168.88.58/'
+    ? 'http://localhost/'
     : 'https://scarlet.australianarmedforces.org/'
 
 function createWindow() {
     // Create the browser window.
-    let mainWindow = new BrowserWindow({
+    mainWindow = new BrowserWindow({
         width: 1000,
         height: 600,
         minHeight: 400,
@@ -38,9 +47,8 @@ function createWindow() {
         transparent: true,
         // frame: false
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false,
-            enableRemoteModule: false,
+            sandbox: true,
+            preload: path.join(__dirname, 'preload.js')
         }
     })
 
@@ -60,7 +68,7 @@ function createWindow() {
 
     mainWindow.once('ready-to-show', () => {
         mainWindow.show()
-        isDev() ? mainWindow.openDevTools() : '';
+        // isDev() ? mainWindow.openDevTools() : '';
         autoUpdater.checkForUpdatesAndNotify()
     })
 
@@ -71,7 +79,6 @@ function createWindow() {
     /**
      * Auto Update
      */
-
     autoUpdater.on('update-available', () => { mainWindow.webContents.send('update_available'); });
     autoUpdater.on('update-downloaded', () => { mainWindow.webContents.send('update_downloaded'); });
     ipcMain.on('restart_app', () => { autoUpdater.quitAndInstall(); });
@@ -82,7 +89,7 @@ function createWindow() {
     ipcMain.on('close', () => { mainWindow.close() });
     ipcMain.on('minimise', () => { mainWindow.minimize() });
     ipcMain.on('steam_login', () => {
-        shell.openExternal(scarletURI + 'browser/steam/verify')
+        shell.openExternal(scarletURI + 'browser/steam/verify') // TODO
     });
 
     ipcMain.on('quit', () => {
@@ -90,7 +97,7 @@ function createWindow() {
     });
 
     app.on('open-url', (event, url) => {
-        let token = url.replace('scarlet://', '')
+        let token = url.replace(protocol + '://', '')
 
         mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token,
             {
