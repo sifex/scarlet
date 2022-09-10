@@ -68,7 +68,7 @@ function createWindow() {
 
     mainWindow.once('ready-to-show', () => {
         mainWindow.show()
-        // isDev() ? mainWindow.openDevTools() : '';
+        isDev() ? mainWindow.openDevTools() : '';
         autoUpdater.checkForUpdatesAndNotify()
     })
 
@@ -89,7 +89,11 @@ function createWindow() {
     ipcMain.on('close', () => { mainWindow.close() });
     ipcMain.on('minimise', () => { mainWindow.minimize() });
     ipcMain.on('steam_login', () => {
-        shell.openExternal(scarletURI + 'browser/steam/verify') // TODO
+        shell.openExternal(scarletURI + 'browser/steam/verify')
+    });
+
+    ipcMain.on('open_admin_page_in_browser', () => {
+        shell.openExternal(scarletURI + 'admin')
     });
 
     ipcMain.on('quit', () => {
