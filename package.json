@@ -6,7 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder build --win --macos --publish never --config electron-builder.yml",
+    "build": "electron-builder build --win --publish never --config electron-builder.yml",
     "deploy": "electron-builder build --win --publish always --config electron-builder.yml"
   },
   "repository": {
@@ -16,25 +16,11 @@
   "private": true,
   "productName": "Scarlet",
   "dependencies": {
-    "electron-deeplink": "^1.0.10",
     "electron-updater": "^4.6.1",
     "ws": "^7.4.6"
   },
   "devDependencies": {
-    "electron": "^20.1.1",
-    "electron-builder": "^22.14.5"
-  },
-  "build": {
-    "appId": "com.aaf.ScarletUpdater",
-    "protocols": {
-      "name": "scarlet-updater",
-      "schemes": [
-        "scarlet"
-      ]
-    },
-    "mac": {
-      "category": "public.updater"
-    },
-    "win": {}
+    "electron": "^24.1.2",
+    "electron-builder": "^24.2.1"
   }
 }

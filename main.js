@@ -17,8 +17,8 @@ let isDev = () => process.argv[2] === '--dev'
 let mainWindow
 
 // URL Handler
-const protocol = isDev ? 'scarlet-dev' : 'scarlet';
-const deeplink = new Deeplink({ app, mainWindow, protocol, isDev });
+const protocol = isDev() ? 'scarlet-dev' : 'scarlet';
+const deeplink = new Deeplink({ app, mainWindow, protocol, isDev, debugLogging: true });
 
 // Single Instance
 if (!app.requestSingleInstanceLock()) { app.quit() }
@@ -32,7 +32,7 @@ if (!app.requestSingleInstanceLock()) { app.quit() }
 
 let scarletURI = isDev()
     ? 'http://localhost/'
-    : 'https://scarlet.australianarmedforces.org/'
+    : 'https://london.australianarmedforces.org/'
 
 function createWindow() {
     // Create the browser window.
@@ -63,7 +63,7 @@ function createWindow() {
             ? __dirname + "/agent/Scarlet.exe" // Development Version
             : __dirname + "/../../resources/agent/Scarlet.exe";  // Production Version
 
-        // shell.openItem(executablePath); // TODO Uncomment before prod
+        shell.openPath(executablePath);
     };
 
     mainWindow.once('ready-to-show', () => {
@@ -100,15 +100,31 @@ function createWindow() {
         mainWindow = null
     });
 
-    app.on('open-url', (event, url) => {
-        let token = url.replace(protocol + '://', '')
+    // app.on('open-url', (event, url) => {
+    //     let token = url.replace(protocol + '://', '')
+    //
+    //     mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token, {
+    //             extraHeaders: 'pragma: no-cache\n'
+    //         })
+    // })
 
-        mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token,
-            {
-                extraHeaders: 'pragma: no-cache\n'
-            })
-    })
+    deeplink.on('received', (link) => {
+        let token = link.replace(/\D/g, "")
+
+        mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token, {
+            extraHeaders: 'pragma: no-cache\n'
+        })
+    });
 }
+
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.focus()
+    }
+
+    dialog.showErrorBox('Welcome Back', `You arrived from: ${commandLine.pop().slice(0, -1)}`)
+})
 
 app.whenReady().then(createWindow)
 
