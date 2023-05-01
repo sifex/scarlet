@@ -2,6 +2,7 @@ import {BrowserWindow, ipcMain, shell} from 'electron';
 import * as path from "path";
 import {AppUpdater, autoUpdater} from "electron-updater";
 import IpcMain = Electron.IpcMain;
+import * as fs from "fs";
 
 
 export default class Main {
@@ -20,6 +21,11 @@ export default class Main {
         }
         Main.browserWindow = browserWindow
         Main.application = app;
+
+        /**
+         * Start Scarlet Agent
+         */
+        Main.startAgent()
 
         /**
          * Bits
@@ -65,7 +71,6 @@ export default class Main {
         return Main.login(url)
     }
 
-
     private static onWindowAllClosed() {
         if (process.platform !== 'darwin') {
             Main.application.quit();
@@ -95,6 +100,17 @@ export default class Main {
             Main.scarlet_api_url() + 'electron/steam/verify?token=' + token,
             {extraHeaders: 'pragma: no-cache\n'}
         )
+    }
+
+    private static startAgent() {
+        let websocket = new WebSocket("ws://localhost:2074");
+        websocket.onerror = function (evt) {
+            const executablePath = fs.existsSync(__dirname + "/agent/Scarlet.exe")
+                ? __dirname + "/agent/Scarlet.exe" // Development Version
+                : __dirname + "/../../resources/agent/Scarlet.exe";  // Production Version
+
+            shell.openPath(executablePath);
+        }
     }
 
     /**
