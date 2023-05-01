@@ -5,8 +5,6 @@ const path = require('path')
 
 let WebSocket = require('ws')
 
-const { Deeplink } = require('electron-deeplink');
-
 /**
  * Setup
  */
@@ -18,7 +16,13 @@ let mainWindow
 
 // URL Handler
 const protocol = isDev() ? 'scarlet-dev' : 'scarlet';
-const deeplink = new Deeplink({ app, mainWindow, protocol, isDev, debugLogging: true });
+if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient(protocol, process.execPath, [path.resolve(process.argv[1])])
+    }
+} else {
+    app.setAsDefaultProtocolClient(protocol)
+}
 
 // Single Instance
 if (!app.requestSingleInstanceLock()) { app.quit() }
@@ -100,21 +104,21 @@ function createWindow() {
         mainWindow = null
     });
 
-    // app.on('open-url', (event, url) => {
-    //     let token = url.replace(protocol + '://', '')
-    //
-    //     mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token, {
-    //             extraHeaders: 'pragma: no-cache\n'
-    //         })
-    // })
-
-    deeplink.on('received', (link) => {
-        let token = link.replace(/\D/g, "")
+    app.on('open-url', (event, url) => {
+        let token = url.replace(protocol + '://', '')
 
         mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token, {
             extraHeaders: 'pragma: no-cache\n'
         })
-    });
+    })
+
+    // deeplink.on('received', (link) => {
+    //     let token = link.replace(/\D/g, "")
+    //
+    //     mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token, {
+    //         extraHeaders: 'pragma: no-cache\n'
+    //     })
+    // });
 }
 
 app.on('second-instance', (event, commandLine, workingDirectory) => {
