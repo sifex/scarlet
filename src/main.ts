@@ -1,9 +1,8 @@
 import {BrowserWindow, ipcMain, shell} from 'electron';
 import * as path from "path";
 import {AppUpdater, autoUpdater} from "electron-updater";
-import IpcMain = Electron.IpcMain;
 import * as fs from "fs";
-
+import * as WebSocket from "ws";
 
 export default class Main {
     static mainWindow: Electron.BrowserWindow;

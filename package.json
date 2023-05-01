@@ -21,6 +21,7 @@
     "ws": "^7.4.6"
   },
   "devDependencies": {
+    "@types/ws": "^8.5.4",
     "copyfiles": "^2.4.1",
     "electron": "^24.1.2",
     "electron-builder": "^24.2.1",
