@@ -104,13 +104,7 @@ function createWindow() {
         mainWindow = null
     });
 
-    app.on('open-url', (event, url) => {
-        let token = url.replace(protocol + '://', '')
-
-        mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token, {
-            extraHeaders: 'pragma: no-cache\n'
-        })
-    })
+    app.on('open-url', (event, url) => login(mainWindow, url))
 
     // deeplink.on('received', (link) => {
     //     let token = link.replace(/\D/g, "")
@@ -121,13 +115,22 @@ function createWindow() {
     // });
 }
 
+function login(mainWindow, url) {
+    let token = url.replace(protocol + '://', '')
+
+    mainWindow.loadURL(scarletURI + 'electron/steam/verify?token=' + token, {
+        extraHeaders: 'pragma: no-cache\n'
+    })
+}
+
 app.on('second-instance', (event, commandLine, workingDirectory) => {
     if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()
         mainWindow.focus()
     }
+    login(mainWindow, commandLine.pop().slice(0, -1))
 
-    dialog.showErrorBox('Welcome Back', `You arrived from: ${commandLine.pop().slice(0, -1)}`)
+    dialog.showErrorBox('Welcome Back', `You arrived from: `)
 })
 
 app.whenReady().then(createWindow)
