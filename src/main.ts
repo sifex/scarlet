@@ -1,8 +1,8 @@
-import {BrowserWindow, ipcMain, shell} from 'electron';
+import {BrowserWindow, ipcMain, shell, dialog} from 'electron';
 import * as path from "path";
 import {AppUpdater, autoUpdater} from "electron-updater";
-import * as fs from "fs";
-import * as WebSocket from "ws";
+const {hello} = require('./agent.node')
+
 
 export default class Main {
     static mainWindow: Electron.BrowserWindow;
@@ -15,6 +15,7 @@ export default class Main {
 
 
     static main(app: Electron.App, browserWindow: typeof BrowserWindow) {
+        console.log(hello())
         if (!app.requestSingleInstanceLock()) {
             app.quit()
         }
@@ -22,16 +23,11 @@ export default class Main {
         Main.application = app;
 
         /**
-         * Start Scarlet Agent
-         */
-        Main.startAgent()
-
-        /**
          * Bits
          */
         Main.registerUrlHandler()
         Main.registerIPCEvents()
-        Main.registerAutoUpdater()
+        // Main.registerAutoUpdater()
 
         /**
          * Application Event Listeners
@@ -42,6 +38,13 @@ export default class Main {
         Main.application.on('ready', Main.onReady);
     }
 
+    /**
+     * When the application is ready
+     *
+     * Loads the main Window, injects preload.js and renders the web page
+     *
+     * @private
+     */
     private static onReady() {
         Main.mainWindow = new Main.browserWindow({
             width: 1000,
@@ -55,9 +58,10 @@ export default class Main {
             // frame: false
             webPreferences: {
                 sandbox: true,
-                preload: path.join(__dirname, 'client/preload.js')
+                preload: path.join(__dirname, Main.isDev() ? './client/preload.js' : '../client/preload.js')
             }
         })
+
         /**
          * Load the Scarlet Website
          */
@@ -66,24 +70,32 @@ export default class Main {
         Main.mainWindow.once('ready-to-show', Main.onReadyToShow)
     }
 
-    private static onOpenUrl(event: Event, url: string) {
-        return Main.login(url)
-    }
-
+    /**
+     * Actions something when all the windows are closed
+     *
+     * @private
+     */
     private static onWindowAllClosed() {
-        if (process.platform !== 'darwin') {
-            Main.application.quit();
-        }
+        Main.application.quit();
     }
 
+    /**
+     * Opens a URL on the Window
+     *
+     * @private
+     */
     private static onClose() {
         Main.mainWindow = null;
     }
 
+    /**
+     * Opens a URL on the Window
+     *
+     * @private
+     */
     private static onReadyToShow() {
         Main.mainWindow.show()
         Main.isDev() ? Main.mainWindow.webContents.openDevTools() : ''
-        autoUpdater.checkForUpdatesAndNotify()
     }
 
     /**
@@ -99,17 +111,6 @@ export default class Main {
             Main.scarlet_api_url() + 'electron/steam/verify?token=' + token,
             {extraHeaders: 'pragma: no-cache\n'}
         )
-    }
-
-    private static startAgent() {
-        let websocket = new WebSocket("ws://localhost:2074");
-        websocket.onerror = function (evt) {
-            const executablePath = fs.existsSync(__dirname + "/agent/Scarlet.exe")
-                ? __dirname + "/agent/Scarlet.exe" // Development Version
-                : __dirname + "/../../resources/agent/Scarlet.exe";  // Production Version
-
-            shell.openPath(executablePath);
-        }
     }
 
     /**
@@ -137,6 +138,8 @@ export default class Main {
      * @private
      */
     private static registerAutoUpdater() {
+        autoUpdater.checkForUpdatesAndNotify()
+
         autoUpdater.on('update-available', () => {
             Main.mainWindow.webContents.send('update_available');
         });
@@ -150,6 +153,9 @@ export default class Main {
 
     /**
      * Install Inter Process Comms Events
+     *
+     * This will only handle the [Web] -> [Electron] events,
+     * for [Electron] -> [Web] events, checkout `preload.js`
      *
      * @private
      */
@@ -168,8 +174,35 @@ export default class Main {
         ipcMain.on('quit', () => {
             Main.mainWindow = null
         });
+
+        ipcMain.on('open_choose_install_dir', (evt, current_directory: string) => {
+            dialog.showOpenDialog(Main.mainWindow, {
+                properties: ['openDirectory'],
+                defaultPath: current_directory,
+                message: 'Select the path to your Arma 3 Folder'
+            }).then(result => {
+                console.log(result.canceled)
+                console.log(result.filePaths)
+                if(result.filePaths[0]) {
+                    Main.mainWindow.webContents.send('on_select_install_dir', result.filePaths[0])
+                }
+            }).catch(err => {
+                console.log(err)
+            })
+        });
     }
 
+    /**
+     * Handle the instance when a second window appears.
+     *
+     * In this case we actually want to login as sometimes the user will open Scarlet
+     * with the `scarlet://` url handler
+     *
+     * @param event
+     * @param commandLine
+     * @param workingDirectory
+     * @private
+     */
     private static onSecondInstance(event: Electron.Event | Electron.Session, commandLine: any, workingDirectory: unknown) {
         // Someone tried to run a second instance, we should focus our window.
         if (Main.mainWindow) {
@@ -182,5 +215,16 @@ export default class Main {
         if (url.startsWith(Main.protocol())) {
             Main.login(url)
         }
+    }
+
+    /**
+     * Opens a URL on the Window
+     *
+     * @param event
+     * @param url
+     * @private
+     */
+    private static onOpenUrl(event: Event, url: string) {
+        return Main.login(url)
     }
 }

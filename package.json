@@ -1,14 +1,15 @@
 {
-  "name": "Scarlet",
+  "name": "scarlet",
   "version": "1.3.3",
   "author": "Australian Armed Forces <omega@sinn.io>",
   "description": "Scarlet is a mod updater for the Australian Armed Forces",
-  "main": "src/app.ts",
+  "main": "./lib/app.js",
   "scripts": {
-    "compile": "tsc",
-    "start": "npm run compile && copyfiles -E -f ./src/client/*.js ./dist/client && electron ./dist/app.js",
-    "build": "electron-builder build --win --publish never --config electron-builder.yml",
-    "deploy": "electron-builder build --win --publish always --config electron-builder.yml"
+    "build-agent": "cargo-cp-artifact -nc lib/agent.node -- cargo build --message-format=json-render-diagnostics",
+    "build-electron": "tsc && copyfiles -E -f ./src/client/*.js ./lib/client ",
+    "build": "npm run build-agent && npm run build-electron",
+    "start": "npm run build && electron ./lib/app.js",
+    "deploy": "npm run build && node_modules/.bin/electron-builder --mac --dir"
   },
   "repository": {
     "type": "git",
@@ -17,14 +18,13 @@
   "private": true,
   "productName": "Scarlet",
   "dependencies": {
-    "electron-updater": "^4.6.1",
-    "ws": "^7.4.6"
+    "electron-updater": "^4.6.1"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.4",
     "copyfiles": "^2.4.1",
     "electron": "^24.1.2",
     "electron-builder": "^24.2.1",
-    "typescript": "^5.0.4"
+    "typescript": "^5.0.4",
+    "cargo-cp-artifact": "^0.1"
   }
 }
