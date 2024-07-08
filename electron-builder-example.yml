@@ -1,7 +1,7 @@
 appId: com.aaf.ScarletUpdater
-publish:
-  provider: github
-  token: [[ GITHUB_TOKEN ]]
+#publish:
+#  provider: github
+#  token: [[ GITHUB_TOKEN ]]
 protocols:
   - name: Scarlet URL Handler
     schemes:
@@ -9,8 +9,12 @@ protocols:
 files:
   - "**/*"
 extraResources:
-  - from: "./agent/"
-    to: "agent"
+  - from: "./lib/client/"
+    to: "./client/"
+    filter:
+      - "**/*"
+  - from: "./lib/agent.node"
+    to: "./agent.node"
     filter:
       - "**/*"
 win:

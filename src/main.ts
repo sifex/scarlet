@@ -1,7 +1,7 @@
 import {BrowserWindow, ipcMain, shell, dialog} from 'electron';
 import * as path from "path";
 import {AppUpdater, autoUpdater} from "electron-updater";
-const {hello} = require('./agent.node')
+const {download_file, md5_hash} = require('./agent.node')
 
 
 export default class Main {
@@ -15,10 +15,22 @@ export default class Main {
 
 
     static main(app: Electron.App, browserWindow: typeof BrowserWindow) {
-        console.log(hello())
-        if (!app.requestSingleInstanceLock()) {
-            app.quit()
-        }
+        download_file(
+            'https://mods.australianarmedforces.org/clans/2/repo/repo.xml',
+            'test_folder/test',
+            '13389933e075ed19586bd7e4117bb1e1',
+            (num: number) => {
+                console.error(num)
+            })
+            .then((arg: any) => {
+                console.log('BLAH')
+                console.log(arg)
+            }).catch((test: any) => {
+                console.log('BLAH')
+                console.error(test)
+            })
+
+        if (!app.requestSingleInstanceLock()) { app.quit() }
         Main.browserWindow = browserWindow
         Main.application = app;
 
@@ -178,7 +190,7 @@ export default class Main {
         ipcMain.on('open_choose_install_dir', (evt, current_directory: string) => {
             dialog.showOpenDialog(Main.mainWindow, {
                 properties: ['openDirectory'],
-                defaultPath: current_directory,
+                defaultPath: current_directory ?? '',
                 message: 'Select the path to your Arma 3 Folder'
             }).then(result => {
                 console.log(result.canceled)
