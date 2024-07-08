@@ -39,7 +39,7 @@ export default class Main {
          */
         Main.registerUrlHandler()
         Main.registerIPCEvents()
-        // Main.registerAutoUpdater()
+        // Main.registerAutoUpdater() // TODO: Re-enable this
 
         /**
          * Application Event Listeners
