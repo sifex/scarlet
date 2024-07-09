@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use downloader::{Download, Downloader, DownloadSummary, Error, Verification};
+use downloader::{Download, Downloader, DownloadSummary, Error, Verification, Verify};
 use neon::prelude::*;
 use md5::{Md5, Digest};
 use std::io::Read;
@@ -36,17 +36,30 @@ fn download_files(
         .into_iter()
         .map(|file| {
             let full_url = format!("{}{}", repo_url, file.path);
-            let file_path = Path::new(&destination_folder).join(&file.path);
+            let file_path = Path::new(&file.path).strip_prefix("/").unwrap();
+            let file_path = Path::new(&destination_folder).join(file_path);
+            let file_hash = file.md5_hash.clone();
+
+            // Ensure folder path exists
+            fs::create_dir_all(file_path.parent().unwrap()).map_err(|e| Error::Setup(e.to_string())).unwrap();
 
             return Download::new(&full_url)
                 .file_name(&file_path)
-                .progress(reporter.clone());
+                .progress(reporter.clone())
+                .verify(Arc::new(move |path, progress| {
+                    let hash = md5_hash_file(path.as_path()).unwrap_or_default();
+                    if hash == file_hash.clone() {
+                        Verification::Ok
+                    } else {
+                        Verification::Failed
+                    }
+                }));
         })
         .collect();
 
     let mut downloader = Downloader::builder()
         .download_folder(Path::new(&destination_folder))
-        .parallel_requests(5)
+        .parallel_requests(1)
         .build()
         .map_err(|e| Error::Setup(e.to_string()))?;
 
@@ -93,10 +106,16 @@ fn sync_scarlet_mods(mut cx: FunctionContext) -> JsResult<JsPromise> {
                                 let status_array = JsArray::new(&mut cx, summary.status.len());
                                 for (j, (url, status_code)) in summary.status.iter().enumerate() {
                                     let status_obj = cx.empty_object();
+
+                                    // Set the URL
                                     let url = cx.string(url);
                                     status_obj.set(&mut cx, "url", url)?;
+
+                                    // Set the status code
                                     let status_code = cx.number(*status_code as f64);
                                     status_obj.set(&mut cx, "statusCode", status_code)?;
+
+                                    // Push the status object to the array
                                     status_array.set(&mut cx, j as u32, status_obj)?;
                                 }
                                 obj.set(&mut cx, "status", status_array)?;
@@ -227,16 +246,16 @@ mod tests {
         let files_to_download = vec![
             FileToDownload {
                 path: "/assets/img/logo.svg".to_string(),
-                md5_hash: "expected_md5_1".to_string(),
+                md5_hash: "bbe5da8f172a8af961362b0f8ad84175".to_string(),
             }
         ];
 
         let reporter = Arc::new(TestReporter);
 
         let results = download_files(
-            repo_url.to_string(), 
-            destination_folder.clone(), 
-            files_to_download, 
+            repo_url.to_string(),
+            destination_folder.clone(),
+            files_to_download,
             reporter
         )
             .expect("Download should succeed");

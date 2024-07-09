@@ -47,10 +47,10 @@ export default class Main {
                     path: '/@Mods_AAF/Arma 3 Preset AAF WorldWar2 30Jun24.html',
                     md5_hash: 'f77e55f95de3b8acf8c297275a986629'
                 },
-                // {
-                //     path: '/@Mods_AAF/@AAF_Vietnam/AAF_Vietnam_Icon.paa',
-                //     md5_hash: 'f6bdf0ccec249ec9145957f72718ac43'
-                // }
+                {
+                    path: '/@Mods_AAF/@AAF_Vietnam/AAF_Vietnam_Icon.paa',
+                    md5_hash: 'f6bdf0ccec249ec9145957f72718ac43'
+                }
             ],
             (num: number, max: number, message: string) => {
                 console.error(num, max, message)
