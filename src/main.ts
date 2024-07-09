@@ -1,8 +1,31 @@
 import {BrowserWindow, ipcMain, shell, dialog} from 'electron';
 import * as path from "path";
 import {AppUpdater, autoUpdater} from "electron-updater";
-const {download_file, md5_hash} = require('./agent.node')
 
+// Define the callback function type
+interface SyncScarletModsCallback {
+    (num: number, max: number, message: string): void;
+}
+
+// Define the type for the `sync_scarlet_mods` function
+interface SyncScarletModsFunction {
+    (
+        repo_url: string,
+        destination_folder: string,
+        files_to_download: Array<FileDownload>,
+        callback: SyncScarletModsCallback
+    ): Promise<any>;
+}
+
+// Assuming `require('./agent.node')` returns an object with the `sync_scarlet_mods` function,
+// you can cast it to the defined type for better type checking.
+const { sync_scarlet_mods }: { sync_scarlet_mods: SyncScarletModsFunction } = require('./agent.node');
+
+
+interface FileDownload {
+    path: string,
+    md5_hash: string,
+}
 
 export default class Main {
     static mainWindow: Electron.BrowserWindow;
@@ -10,23 +33,33 @@ export default class Main {
     static browserWindow: typeof BrowserWindow;
 
     private static isDev = (): boolean => process.argv[2] === '--dev'
-    private static scarlet_api_url = () => Main.isDev() ? 'http://localhost/' : 'https://london.australianarmedforces.org/';
+    private static scarlet_api_url = () => Main.isDev() ? 'http://localhost/' : 'https://scarlet.australianarmedforces.org/';
     private static protocol = () => Main.isDev() ? 'scarlet-dev' : 'scarlet';
 
 
     static main(app: Electron.App, browserWindow: typeof BrowserWindow) {
-        download_file(
-            'https://mods.australianarmedforces.org/clans/2/repo/repo.xml',
-            'test_folder/test',
-            '13389933e075ed19586bd7e4117bb1e1',
-            (num: number) => {
-                console.error(num)
+
+        sync_scarlet_mods(
+            'https://mods.australianarmedforces.org/clans/2/repo/',
+            '/Users/alex/Development/scarlet-ui/test_folder/',
+            [
+                {
+                    path: '/@Mods_AAF/Arma 3 Preset AAF WorldWar2 30Jun24.html',
+                    md5_hash: 'f77e55f95de3b8acf8c297275a986629'
+                },
+                {
+                    path: '/@Mods_AAF/@AAF_Vietnam/AAF_Vietnam_Icon.paa',
+                    md5_hash: 'f6bdf0ccec249ec9145957f72718ac43'
+                }
+            ],
+            (num: number, max: number, message: string) => {
+                console.error(num, max, message)
             })
             .then((arg: any) => {
-                console.log('BLAH')
+                console.log('Done')
                 console.log(arg)
             }).catch((test: any) => {
-                console.log('BLAH')
+                console.error('Error')
                 console.error(test)
             })
 
