@@ -11,7 +11,11 @@ contextBridge.exposeInMainWorld('scarlet', {
 
     /** New Shit – 2023 **/
     open_choose_install_dir: (existing_directory) => ipcRenderer.send("open_choose_install_dir", existing_directory),
-    on_select_install_dir: (callback) => ipcRenderer.on('on_select_install_dir', callback)
+    on_select_install_dir: (callback) => ipcRenderer.on('on_select_install_dir', callback),
 
+    // Rust Bindings
+    start_download: () => ipcRenderer.send("start_download"),
+    stop_download: () => ipcRenderer.send('stop_download'),
+    ping: () => ipcRenderer.invoke("ping"),
 })
 

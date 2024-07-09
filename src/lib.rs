@@ -12,12 +12,6 @@ struct FileToDownload {
     pub md5_hash: String,
 }
 
-fn md5_hash(mut cx: FunctionContext) -> JsResult<JsString> {
-    let file_path = cx.argument::<JsString>(0)?.value(&mut cx);
-    let hash = md5_hash_file(Path::new(&file_path)).or_else(|e| cx.throw_error(e.to_string()))?;
-    Ok(cx.string(hash))
-}
-
 fn delete_file(mut cx: FunctionContext) -> JsResult<JsBoolean> {
     let file_path = cx.argument::<JsString>(0)?.value(&mut cx);
     match fs::remove_file(file_path) {
@@ -222,6 +216,12 @@ impl downloader::progress::Reporter for ScarletDownloadReporter {
     }
 }
 
+fn md5_hash(mut cx: FunctionContext) -> JsResult<JsString> {
+    let file_path = cx.argument::<JsString>(0)?.value(&mut cx);
+    let hash = md5_hash_file(Path::new(&file_path)).or_else(|e| cx.throw_error(e.to_string()))?;
+    Ok(cx.string(hash))
+}
+
 fn md5_hash_file(path: &Path) -> Result<String, std::io::Error> {
     let mut file = fs::File::open(path)?;
     let mut hasher = Md5::new();
@@ -232,11 +232,16 @@ fn md5_hash_file(path: &Path) -> Result<String, std::io::Error> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+fn ping(mut cx: FunctionContext) -> JsResult<JsString> {
+    Ok(cx.string("pong"))
+}
+
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("md5_hash", md5_hash)?;
     cx.export_function("delete_file", delete_file)?;
     cx.export_function("sync_scarlet_mods", sync_scarlet_mods)?;
+    cx.export_function("ping", ping)?;
     Ok(())
 }
 

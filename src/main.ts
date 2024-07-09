@@ -20,7 +20,7 @@ interface SyncScarletModsFunction {
 
 // Assuming `require('./agent.node')` returns an object with the `sync_scarlet_mods` function,
 // you can cast it to the defined type for better type checking.
-const { sync_scarlet_mods }: { sync_scarlet_mods: SyncScarletModsFunction } = require('./agent.node');
+const { sync_scarlet_mods, ping }: { sync_scarlet_mods: SyncScarletModsFunction, ping: any } = require('./agent.node');
 
 
 interface FileDownload {
@@ -72,24 +72,25 @@ export default class Main {
     private static scarlet_api_url = () => Main.isDev() ? 'http://localhost/' : 'https://scarlet.australianarmedforces.org/';
     private static protocol = () => Main.isDev() ? 'scarlet-dev' : 'scarlet';
 
+    private static mods_base_url = 'https://mods.australianarmedforces.org/clans/2/repo/';
 
     static main(app: Electron.App, browserWindow: typeof BrowserWindow) {
-        let files = fetchAndConvertXML('https://mods.australianarmedforces.org/clans/2/repo/repo.xml').then((files: FileDownload[]) => {
-            sync_scarlet_mods(
-                'https://mods.australianarmedforces.org/clans/2/repo/',
-                '/Users/alex/Development/scarlet-ui/test_folder/',
-                files,
-                (num: number, max: number, message: string) => {
-                    console.error(num, max, message)
-                })
-                .then((arg: any) => {
-                    console.log('Done')
-                    console.log(arg)
-                }).catch((test: any) => {
-                console.error('Error')
-                console.error(test)
-            })
-        })
+        // let files = fetchAndConvertXML(this.mods_base_url + 'repo.xml').then((files: FileDownload[]) => {
+        //     sync_scarlet_mods(
+        //         this.mods_base_url,
+        //         '/Users/alex/Development/scarlet-ui/test_folder/',
+        //         files,
+        //         (num: number, max: number, message: string) => {
+        //             console.error(num, max, message)
+        //         })
+        //         .then((arg: any) => {
+        //             console.log('Done')
+        //             console.log(arg)
+        //         }).catch((test: any) => {
+        //         console.error('Error')
+        //         console.error(test)
+        //     })
+        // })
 
         if (!app.requestSingleInstanceLock()) { app.quit() }
         Main.browserWindow = browserWindow
@@ -263,6 +264,8 @@ export default class Main {
                 console.log(err)
             })
         });
+
+        ipcMain.handle('ping', ping)
     }
 
     /**
