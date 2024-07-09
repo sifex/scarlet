@@ -1,6 +1,7 @@
 import {BrowserWindow, ipcMain, shell, dialog} from 'electron';
 import * as path from "path";
 import {AppUpdater, autoUpdater} from "electron-updater";
+import {XMLParser} from "fast-xml-parser";
 
 // Define the callback function type
 interface SyncScarletModsCallback {
@@ -27,6 +28,41 @@ interface FileDownload {
     md5_hash: string,
 }
 
+async function fetchAndConvertXML(url: string): Promise<FileDownload[]> {
+    try {
+        // Fetch the XML data
+        const response = await fetch(url);
+        const xmlData = await response.text();
+
+        // Parse the XML
+        const parser = new XMLParser();
+        const jsonObj = parser.parse(xmlData);
+
+        // Extract file information
+        const fileDownloads: FileDownload[] = [];
+
+        if (Array.isArray(jsonObj.theupdates.file)) {
+            jsonObj.theupdates.file.forEach((file: any) => {
+                fileDownloads.push({
+                    path: file.name,
+                    md5_hash: file.hash
+                });
+            });
+        } else if (jsonObj.theupdates.file) {
+            // If there's only one file, it might not be in an array
+            fileDownloads.push({
+                path: jsonObj.theupdates.file.name,
+                md5_hash: jsonObj.theupdates.file.hash
+            });
+        }
+
+        return fileDownloads;
+    } catch (error) {
+        console.error('Error fetching or parsing XML:', error);
+        throw error;
+    }
+}
+
 export default class Main {
     static mainWindow: Electron.BrowserWindow;
     static application: Electron.App;
@@ -38,30 +74,22 @@ export default class Main {
 
 
     static main(app: Electron.App, browserWindow: typeof BrowserWindow) {
-
-        sync_scarlet_mods(
-            'https://mods.australianarmedforces.org/clans/2/repo/',
-            '/Users/alex/Development/scarlet-ui/test_folder/',
-            [
-                {
-                    path: '/@Mods_AAF/Arma 3 Preset AAF WorldWar2 30Jun24.html',
-                    md5_hash: 'f77e55f95de3b8acf8c297275a986629'
-                },
-                {
-                    path: '/@Mods_AAF/@AAF_Vietnam/AAF_Vietnam_Icon.paa',
-                    md5_hash: 'f6bdf0ccec249ec9145957f72718ac43'
-                }
-            ],
-            (num: number, max: number, message: string) => {
-                console.error(num, max, message)
-            })
-            .then((arg: any) => {
-                console.log('Done')
-                console.log(arg)
-            }).catch((test: any) => {
+        let files = fetchAndConvertXML('https://mods.australianarmedforces.org/clans/2/repo/repo.xml').then((files: FileDownload[]) => {
+            sync_scarlet_mods(
+                'https://mods.australianarmedforces.org/clans/2/repo/',
+                '/Users/alex/Development/scarlet-ui/test_folder/',
+                files,
+                (num: number, max: number, message: string) => {
+                    console.error(num, max, message)
+                })
+                .then((arg: any) => {
+                    console.log('Done')
+                    console.log(arg)
+                }).catch((test: any) => {
                 console.error('Error')
                 console.error(test)
             })
+        })
 
         if (!app.requestSingleInstanceLock()) { app.quit() }
         Main.browserWindow = browserWindow

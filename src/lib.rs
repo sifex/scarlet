@@ -1,11 +1,11 @@
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use downloader::{Download, Downloader, DownloadSummary, Error, Verification, Verify};
+
+use downloader::{Download, Downloader, DownloadSummary, Error, Verification};
+use md5::{Digest, Md5};
 use neon::prelude::*;
-use md5::{Md5, Digest};
-use std::io::Read;
-use tempfile::tempdir;
 
 struct FileToDownload {
     pub path: String,
@@ -46,7 +46,7 @@ fn download_files(
             return Download::new(&full_url)
                 .file_name(&file_path)
                 .progress(reporter.clone())
-                .verify(Arc::new(move |path, progress| {
+                .verify(Arc::new(move |path, _progress| {
                     let hash = md5_hash_file(path.as_path()).unwrap_or_default();
                     if hash == file_hash.clone() {
                         Verification::Ok
@@ -88,6 +88,14 @@ fn sync_scarlet_mods(mut cx: FunctionContext) -> JsResult<JsPromise> {
 
     let reporter = Arc::new(ScarletDownloadReporter::new(progress_callback, channel.clone()));
 
+    // Reduce the number of files to only those that don't match their hashes.
+    let files = files.into_iter().filter(|file| {
+        let file_path = Path::new(&file.path).strip_prefix("/").unwrap();
+        let file_path = Path::new(&destination_folder).join(file_path);
+        let hash = md5_hash_file(file_path.as_path()).unwrap_or_default();
+        hash != file.md5_hash
+    }).collect();
+    
     std::thread::spawn(move || {
         let result = download_files(repo_url, destination_folder, files, reporter);
 
@@ -221,8 +229,6 @@ fn md5_hash_file(path: &Path) -> Result<String, std::io::Error> {
     file.read_to_end(&mut buffer)?;
     hasher.update(&buffer);
 
-    println!("{:x}", hasher.clone().finalize());
-
     Ok(format!("{:x}", hasher.finalize()))
 }
 
@@ -237,6 +243,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_download_files() {

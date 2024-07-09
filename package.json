@@ -18,13 +18,14 @@
   "private": true,
   "productName": "Scarlet",
   "dependencies": {
-    "electron-updater": "^4.6.1"
+    "electron-updater": "^4.6.1",
+    "fast-xml-parser": "^4.4.0"
   },
   "devDependencies": {
+    "cargo-cp-artifact": "^0.1",
     "copyfiles": "^2.4.1",
     "electron": "^24.1.2",
     "electron-builder": "^24.2.1",
-    "typescript": "^5.0.4",
-    "cargo-cp-artifact": "^0.1"
+    "typescript": "^5.0.4"
   }
 }
