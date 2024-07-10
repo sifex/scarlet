@@ -193,7 +193,7 @@ impl downloader::progress::Reporter for ScarletDownloadReporter {
         let mut progress = self.current_progress.lock().unwrap();
         *progress = current;
         let mut last_update = self.last_update.lock().unwrap();
-        if last_update.elapsed().as_millis() >= 1000 {
+        if last_update.elapsed().as_millis() >= 100 {
             *last_update = std::time::Instant::now();
             let max_progress = *self.max_progress.lock().unwrap();
             let message = self.message.lock().unwrap().clone();

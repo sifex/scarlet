@@ -75,22 +75,7 @@ export default class Main {
     private static mods_base_url = 'https://mods.australianarmedforces.org/clans/2/repo/';
 
     static main(app: Electron.App, browserWindow: typeof BrowserWindow) {
-        // let files = fetchAndConvertXML(this.mods_base_url + 'repo.xml').then((files: FileDownload[]) => {
-        //     sync_scarlet_mods(
-        //         this.mods_base_url,
-        //         '/Users/alex/Development/scarlet-ui/test_folder/',
-        //         files,
-        //         (num: number, max: number, message: string) => {
-        //             console.error(num, max, message)
-        //         })
-        //         .then((arg: any) => {
-        //             console.log('Done')
-        //             console.log(arg)
-        //         }).catch((test: any) => {
-        //         console.error('Error')
-        //         console.error(test)
-        //     })
-        // })
+
 
         if (!app.requestSingleInstanceLock()) { app.quit() }
         Main.browserWindow = browserWindow
@@ -266,6 +251,25 @@ export default class Main {
         });
 
         ipcMain.handle('ping', ping)
+
+        ipcMain.on('start_download', () => {
+            let files = fetchAndConvertXML(this.mods_base_url + 'repo.xml').then((files: FileDownload[]) => {
+                sync_scarlet_mods(
+                    this.mods_base_url,
+                    '/Users/alex/Development/scarlet-ui/test_folder/',
+                    files,
+                    (num: number, max: number, message: string) => {
+                        console.info(num, max, message)
+                    })
+                    .then((arg: any) => {
+                        console.log('Done')
+                        console.log(arg)
+                    }).catch((test: any) => {
+                    console.error('Error')
+                    console.error(test)
+                })
+            })
+        })
     }
 
     /**
