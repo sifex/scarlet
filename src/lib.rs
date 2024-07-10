@@ -17,6 +17,8 @@ struct FileToDownload {
 static CANCELLATION_FLAG: AtomicBool = AtomicBool::new(false);
 
 fn start_download(mut cx: FunctionContext) -> JsResult<JsPromise> {
+    CANCELLATION_FLAG.store(false, Ordering::SeqCst);
+    
     let repo_url = cx.argument::<JsString>(0)?.value(&mut cx);
     let destination_folder = cx.argument::<JsString>(1)?.value(&mut cx);
     let files_to_download = cx.argument::<JsArray>(2)?;
@@ -122,14 +124,52 @@ fn download_files(
 
     let mut downloader = Downloader::builder()
         .download_folder(Path::new(&destination_folder))
-        .parallel_requests(3)
+        .parallel_requests(1)
         .build()?;
 
     let results = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         downloader.download(&*downloads)
     }));
 
-    results.unwrap_or_else(|_e| Err(Error::Setup("Download cancelled".to_string())))
+    let results: Result<Vec<Result<DownloadSummary, Error>>, Error> = results.unwrap_or_else(|_e| Err(Error::Setup("Download cancelled".to_string())));
+    
+    // If we find an item that matches downloader::Error::Download(DownloadSummary), we need to verify that the file was downloaded
+    // and the hash is correct. We can map the error to a Result<DownloadSummary, Error> and provide the verification status back to the client.
+    // For errors that aren't downloader::Error::Download(DownloadSummary), we can just return the error as is
+    
+    let results = results.map(|results| {
+        results.into_iter().map(|result| {
+            match result {
+                Ok(summary) => Ok(summary),
+                Err(Error::Download(mut summary)) => {
+                    // Here we can get the hash from the downloads array and verify the file
+                    let file = downloads.iter().find(|d| d.file_name == summary.file_name).unwrap();
+                    let verify_callback = file.verify_callback.clone();
+                    
+                    let verification = verify_callback(summary.file_name.clone(), &|_| {});
+                    
+                    match verification {
+                        Verification::Ok => {
+                            summary.verified = Verification::Ok;
+                        },
+                        Verification::Failed => {
+                            summary.verified = Verification::Failed;
+                        },
+                        _ => {
+                            summary.verified = Verification::NotVerified;
+                        }
+                    }
+                    
+                    summary.status.push((summary.file_name.to_str().unwrap_or("").to_string(), 200));
+                    
+                    Ok(summary)
+                },
+                Err(e) => Err(e),
+            }
+        }).collect()
+    });
+    
+    return results;
 }
 
 
@@ -246,6 +286,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+    use serial_test::serial;
     use tempfile::tempdir;
 
     use super::*;
@@ -263,6 +304,7 @@ mod tests {
         fn done(&self) {}
     }
 
+    #[serial]
     #[test]
     fn test_download_files() {
         let temp_dir = tempdir().unwrap();
@@ -299,6 +341,60 @@ mod tests {
         }
     }
 
+    #[serial]
+    #[test]
+    fn test_download_file_twice() {
+        let temp_dir = tempdir().unwrap();
+        let destination_folder = temp_dir.path().to_str().unwrap().to_string();
+        let repo_url = "https://www.electronjs.org";
+        let files_to_download = vec![
+            FileToDownload {
+                path: "/assets/img/logo.svg".to_string(),
+                md5_hash: "bbe5da8f172a8af961362b0f8ad84175".to_string(),
+            }
+        ];
+
+        let reporter = Arc::new(TestReporter);
+
+        let result = download_files(
+            repo_url.to_string(),
+            destination_folder.clone(),
+            files_to_download,
+            reporter,
+        );
+        
+        let files_to_download = vec![
+            FileToDownload {
+                path: "/assets/img/logo.svg".to_string(),
+                md5_hash: "bbe5da8f172a8af961362b0f8ad84175".to_string(),
+            }
+        ];
+
+        let reporter = Arc::new(TestReporter);
+
+        let result = download_files(
+            repo_url.to_string(),
+            destination_folder.clone(),
+            files_to_download,
+            reporter,
+        );
+
+        assert!(result.is_ok(), "Download should succeed");
+        let summaries = result.unwrap();
+        assert_eq!(summaries.len(), 1, "Should have one download summary");
+
+        for summary_result in summaries {
+            match summary_result {
+                Ok(summary) => {
+                    assert_eq!(summary.verified, Verification::Ok, "File {} should be verified", summary.file_name.display());
+                    assert!(!summary.status.is_empty(), "Status should not be empty");
+                }
+                Err(e) => panic!("Download failed: {:?}", e),
+            }
+        }
+    }
+
+    #[serial]
     #[test]
     fn test_cancelling_download() {
         let temp_dir = tempdir().unwrap();
@@ -341,7 +437,7 @@ mod tests {
 
         // Check the result
         match rx.recv() {
-            Ok(Ok(a)) => { 
+            Ok(Ok(a)) => {
                 panic!("Download should have been cancelled, but got: {:?}", a);
             },
             Ok(Err(e)) if format!("{:?}", e).contains("Download cancelled") => {
