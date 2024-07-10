@@ -1,8 +1,9 @@
-use std::fs;
+use std::{fs, thread};
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use downloader::{Download, Downloader, DownloadSummary, Error, Verification};
 use md5::{Digest, Md5};
 use neon::prelude::*;
@@ -12,55 +13,12 @@ struct FileToDownload {
     pub md5_hash: String,
 }
 
-fn delete_file(mut cx: FunctionContext) -> JsResult<JsBoolean> {
-    let file_path = cx.argument::<JsString>(0)?.value(&mut cx);
-    match fs::remove_file(file_path) {
-        Ok(_) => Ok(cx.boolean(true)),
-        Err(_) => Ok(cx.boolean(false))
-    }
+struct DownloadHandle {
+    cancel_flag: Arc<AtomicBool>,
+    thread: Option<thread::JoinHandle<()>>,
 }
 
-fn download_files(
-    repo_url: String,
-    destination_folder: String,
-    files: Vec<FileToDownload>,
-    reporter: Arc<dyn downloader::progress::Reporter + Send + Sync>,
-) -> Result<Vec<Result<DownloadSummary, Error>>, Error> {
-    let downloads: Vec<Download> = files
-        .into_iter()
-        .map(|file| {
-            let full_url = format!("{}{}", repo_url, file.path);
-            let file_path = Path::new(&file.path).strip_prefix("/").unwrap();
-            let file_path = Path::new(&destination_folder).join(file_path);
-            let file_hash = file.md5_hash.clone();
-
-            // Ensure folder path exists
-            fs::create_dir_all(file_path.parent().unwrap()).map_err(|e| Error::Setup(e.to_string())).unwrap();
-
-            return Download::new(&full_url)
-                .file_name(&file_path)
-                .progress(reporter.clone())
-                .verify(Arc::new(move |path, _progress| {
-                    let hash = md5_hash_file(path.as_path()).unwrap_or_default();
-                    if hash == file_hash.clone() {
-                        Verification::Ok
-                    } else {
-                        Verification::Failed
-                    }
-                }));
-        })
-        .collect();
-
-    let mut downloader = Downloader::builder()
-        .download_folder(Path::new(&destination_folder))
-        .parallel_requests(1)
-        .build()
-        .map_err(|e| Error::Setup(e.to_string()))?;
-
-    return downloader.download(&downloads);
-}
-
-fn sync_scarlet_mods(mut cx: FunctionContext) -> JsResult<JsPromise> {
+fn start_download(mut cx: FunctionContext) -> JsResult<JsObject> {
     let repo_url = cx.argument::<JsString>(0)?.value(&mut cx);
     let destination_folder = cx.argument::<JsString>(1)?.value(&mut cx);
     let files_to_download = cx.argument::<JsArray>(2)?;
@@ -80,18 +38,13 @@ fn sync_scarlet_mods(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let (deferred, promise) = cx.promise();
     let channel = cx.channel();
 
-    let reporter = Arc::new(ScarletDownloadReporter::new(progress_callback, channel.clone()));
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let reporter = Arc::new(ScarletDownloadReporter::new(progress_callback, channel.clone(), cancel_flag.clone()));
 
-    // Reduce the number of files to only those that don't match their hashes.
-    let files = files.into_iter().filter(|file| {
-        let file_path = Path::new(&file.path).strip_prefix("/").unwrap();
-        let file_path = Path::new(&destination_folder).join(file_path);
-        let hash = md5_hash_file(file_path.as_path()).unwrap_or_default();
-        hash != file.md5_hash
-    }).collect();
-    
-    std::thread::spawn(move || {
-        let result = download_files(repo_url, destination_folder, files, reporter);
+    let cancel_flag_clone = cancel_flag.clone();
+
+    let download_thread = thread::spawn(move || {
+        let result = download_files(repo_url, destination_folder, files, reporter, cancel_flag_clone);
 
         deferred.settle_with(&channel, move |mut cx| {
             match result {
@@ -108,16 +61,10 @@ fn sync_scarlet_mods(mut cx: FunctionContext) -> JsResult<JsPromise> {
                                 let status_array = JsArray::new(&mut cx, summary.status.len());
                                 for (j, (url, status_code)) in summary.status.iter().enumerate() {
                                     let status_obj = cx.empty_object();
-
-                                    // Set the URL
                                     let url = cx.string(url);
                                     status_obj.set(&mut cx, "url", url)?;
-
-                                    // Set the status code
                                     let status_code = cx.number(*status_code as f64);
                                     status_obj.set(&mut cx, "statusCode", status_code)?;
-
-                                    // Push the status object to the array
                                     status_array.set(&mut cx, j as u32, status_obj)?;
                                 }
                                 obj.set(&mut cx, "status", status_array)?;
@@ -131,13 +78,103 @@ fn sync_scarlet_mods(mut cx: FunctionContext) -> JsResult<JsPromise> {
                     }
                     Ok(js_results)
                 }
-                Err(e) => cx.throw_error(e.to_string()),
+                Err(e) => {
+                    cx.throw_error(e.to_string())
+                },
             }
         });
     });
 
-    Ok(promise)
+    let download_handle = Arc::new(Mutex::new(DownloadHandle {
+        cancel_flag,
+        thread: Some(download_thread),
+    }));
+
+    let download_handle_ptr = Arc::into_raw(download_handle) as u64;
+
+    let result = cx.empty_object();
+    result.set(&mut cx, "promise", promise)?;
+    let handle_ptr = cx.number(download_handle_ptr as f64);
+    result.set(&mut cx, "handlePtr", handle_ptr)?;
+
+    Ok(result)
 }
+
+fn stop_download(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let handle_ptr = cx.argument::<JsNumber>(0)?.value(&mut cx) as u64;
+    let download_handle = unsafe { Arc::from_raw(handle_ptr as *const Mutex<DownloadHandle>) };
+
+    let handle = download_handle.lock().unwrap();
+    handle.cancel_flag.store(true, Ordering::SeqCst);
+
+    Ok(cx.undefined())
+}
+
+fn download_files(
+    repo_url: String,
+    destination_folder: String,
+    files: Vec<FileToDownload>,
+    reporter: Arc<dyn downloader::progress::Reporter + Send + Sync>,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<Vec<Result<DownloadSummary, Error>>, Error> {
+    let downloads: Vec<Download> = files
+        .into_iter()
+        .map(|file| {
+            let full_url = format!("{}{}", repo_url, file.path);
+            let file_path = Path::new(&file.path).strip_prefix("/").unwrap();
+            let file_path = Path::new(&destination_folder).join(file_path);
+            let file_hash = file.md5_hash.clone();
+
+            fs::create_dir_all(file_path.parent().unwrap())
+                .map_err(|e| Error::Setup(e.to_string())).unwrap();
+
+            Download::new(&full_url)
+                .file_name(&file_path)
+                .progress(reporter.clone())
+                .verify(Arc::new(move |path, _progress| {
+                    let hash = md5_hash_file(path.as_path()).unwrap_or_default();
+                    if hash == file_hash.clone() {
+                        Verification::Ok
+                    } else {
+                        Verification::Failed
+                    }
+                }))
+        })
+        .collect::<Vec<_>>();
+
+    let mut downloader = Downloader::builder()
+        .download_folder(Path::new(&destination_folder))
+        .parallel_requests(1)
+        .build()?;
+
+    let mut results = Vec::new();
+
+    for download in downloads {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Err(Error::Setup("Download cancelled".to_string()));
+        }
+
+        let result = downloader.download(&[download]);
+        match result {
+            Ok(mut summaries) => {
+                if let Some(summary) = summaries.pop() {
+                    results.push(summary);
+                } else {
+                    results.push(Err(Error::DownloadDefinition("No summary".into())));
+                }
+            }
+            Err(e) => results.push(Err(e)),
+        }
+
+        // Check cancellation after each download
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Err(Error::Setup("Download cancelled".to_string()));
+        }
+    }
+
+    Ok(results)
+}
+
 
 struct ScarletDownloadReporter {
     callback: Arc<Root<JsFunction>>,
@@ -146,10 +183,11 @@ struct ScarletDownloadReporter {
     current_progress: Arc<Mutex<u64>>,
     max_progress: Mutex<Option<u64>>,
     message: Mutex<String>,
+    cancel_flag: Arc<AtomicBool>,
 }
 
 impl ScarletDownloadReporter {
-    fn new(callback: Root<JsFunction>, channel: Channel) -> Self {
+    fn new(callback: Root<JsFunction>, channel: Channel, cancel_flag: Arc<AtomicBool>) -> Self {
         Self {
             callback: Arc::new(callback),
             channel: Arc::new(channel),
@@ -157,6 +195,7 @@ impl ScarletDownloadReporter {
             current_progress: Arc::new(Mutex::new(0)),
             max_progress: Mutex::new(None),
             message: Mutex::new(String::new()),
+            cancel_flag,
         }
     }
 
@@ -190,6 +229,10 @@ impl downloader::progress::Reporter for ScarletDownloadReporter {
     }
 
     fn progress(&self, current: u64) {
+        if self.cancel_flag.load(Ordering::SeqCst) {
+            panic!("Download cancelled");
+        }
+
         let mut progress = self.current_progress.lock().unwrap();
         *progress = current;
         let mut last_update = self.last_update.lock().unwrap();
@@ -239,8 +282,8 @@ fn ping(mut cx: FunctionContext) -> JsResult<JsString> {
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("md5_hash", md5_hash)?;
-    cx.export_function("delete_file", delete_file)?;
-    cx.export_function("sync_scarlet_mods", sync_scarlet_mods)?;
+    cx.export_function("start_download", start_download)?;
+    cx.export_function("stop_download", stop_download)?;
     cx.export_function("ping", ping)?;
     Ok(())
 }
@@ -249,6 +292,15 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    struct TestReporter;
+
+    impl downloader::progress::Reporter for TestReporter {
+        fn setup(&self, _max_progress: Option<u64>, _message: &str) {}
+        fn progress(&self, _current: u64) {}
+        fn set_message(&self, _message: &str) {}
+        fn done(&self) {}
+    }
 
     #[test]
     fn test_download_files() {
@@ -263,33 +315,87 @@ mod tests {
         ];
 
         let reporter = Arc::new(TestReporter);
+        let cancel_flag = Arc::new(AtomicBool::new(false));
 
-        let results = download_files(
+        let result = download_files(
             repo_url.to_string(),
             destination_folder.clone(),
             files_to_download,
-            reporter
-        )
-            .expect("Download should succeed");
+            reporter,
+            cancel_flag,
+        );
 
-        assert_eq!(results.len(), 1);
-        for summary_result in results {
+        assert!(result.is_ok(), "Download should succeed");
+        let summaries = result.unwrap();
+        assert_eq!(summaries.len(), 1, "Should have one download summary");
+
+        for summary_result in summaries {
             match summary_result {
                 Ok(summary) => {
                     assert_eq!(summary.verified, Verification::Ok, "File {} should be verified", summary.file_name.display());
                     assert!(!summary.status.is_empty(), "Status should not be empty");
-                },
+                }
                 Err(e) => panic!("Download failed: {:?}", e),
             }
         }
     }
 
-    struct TestReporter;
+    #[test]
+    fn test_cancelling_download() {
+        let temp_dir = tempdir().unwrap();
+        let destination_folder = temp_dir.path().to_str().unwrap().to_string();
+        let repo_url = "https://www.electronjs.org";
+        let files_to_download = vec![
+            FileToDownload {
+                path: "/assets/img/logo.svg".to_string(),
+                md5_hash: "bbe5da8f172a8af961362b0f8ad84175".to_string(),
+            },
+            // Add more files to make the download take longer
+            FileToDownload {
+                path: "/assets/img/hero-cloud.png".to_string(),
+                md5_hash: "fake_hash_to_force_redownload".to_string(),
+            },
+        ];
 
-    impl downloader::progress::Reporter for TestReporter {
-        fn setup(&self, _max_progress: Option<u64>, _message: &str) {}
-        fn progress(&self, _current: u64) {}
-        fn set_message(&self, _message: &str) {}
-        fn done(&self) {}
+        let reporter = Arc::new(TestReporter);
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let cancel_flag_clone = cancel_flag.clone();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        let download_thread = thread::spawn(move || {
+            let result = download_files(
+                repo_url.to_string(),
+                destination_folder.clone(),
+                files_to_download,
+                reporter,
+                cancel_flag_clone,
+            );
+            tx.send(result).unwrap();
+        });
+
+        // Wait a bit to ensure the download has started
+        thread::sleep(Duration::from_millis(100));
+
+        // Cancel the download
+        cancel_flag.store(true, Ordering::SeqCst);
+
+        // Wait for the download thread to finish
+        download_thread.join().unwrap();
+
+        // Check the result
+        match rx.recv() {
+            Ok(Ok(_)) => panic!("Download completed despite cancellation"),
+            Ok(Err(e)) if format!("{:?}", e).contains("Download cancelled") => {
+                // This is the expected outcome: the download was cancelled
+                assert!(true, "Download was successfully cancelled");
+            },
+            Ok(Err(e)) => panic!("Unexpected error: {:?}", e),
+            Err(e) => panic!("Channel error: {:?}", e),
+        }
+
+        // Verify that no files (or only partial files) were downloaded
+        let downloaded_files: Vec<_> = temp_dir.path().read_dir().unwrap().collect();
+        assert!(downloaded_files.len() <= 1, "At most one file should be partially downloaded");
     }
 }

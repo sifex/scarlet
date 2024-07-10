@@ -8,19 +8,23 @@ interface SyncScarletModsCallback {
     (num: number, max: number, message: string): void;
 }
 
-// Define the type for the `sync_scarlet_mods` function
+// Define the type for the `start_download` function
 interface SyncScarletModsFunction {
     (
         repo_url: string,
         destination_folder: string,
         files_to_download: Array<FileDownload>,
         callback: SyncScarletModsCallback
-    ): Promise<any>;
+    ): { promise: Promise<any>, handlePtr: bigint };
 }
 
-// Assuming `require('./agent.node')` returns an object with the `sync_scarlet_mods` function,
+// Assuming `require('./agent.node')` returns an object with the `start_download` function,
 // you can cast it to the defined type for better type checking.
-const { sync_scarlet_mods, ping }: { sync_scarlet_mods: SyncScarletModsFunction, ping: any } = require('./agent.node');
+const {start_download, ping, stop_download}: {
+    start_download: SyncScarletModsFunction,
+    ping: any,
+    stop_download: any
+} = require('./agent.node');
 
 
 interface FileDownload {
@@ -77,7 +81,9 @@ export default class Main {
     static main(app: Electron.App, browserWindow: typeof BrowserWindow) {
 
 
-        if (!app.requestSingleInstanceLock()) { app.quit() }
+        if (!app.requestSingleInstanceLock()) {
+            app.quit()
+        }
         Main.browserWindow = browserWindow
         Main.application = app;
 
@@ -242,7 +248,7 @@ export default class Main {
             }).then(result => {
                 console.log(result.canceled)
                 console.log(result.filePaths)
-                if(result.filePaths[0]) {
+                if (result.filePaths[0]) {
                     Main.mainWindow.webContents.send('on_select_install_dir', result.filePaths[0])
                 }
             }).catch(err => {
@@ -254,17 +260,24 @@ export default class Main {
 
         ipcMain.on('start_download', () => {
             let files = fetchAndConvertXML(this.mods_base_url + 'repo.xml').then((files: FileDownload[]) => {
-                sync_scarlet_mods(
+                const {promise, handlePtr} = start_download(
                     this.mods_base_url,
                     '/Users/alex/Development/scarlet-ui/test_folder/',
                     files,
                     (num: number, max: number, message: string) => {
                         console.info(num, max, message)
-                    })
-                    .then((arg: any) => {
-                        console.log('Done')
-                        console.log(arg)
-                    }).catch((test: any) => {
+                    });
+
+                ipcMain.on('stop_download', () => {
+                    console.log('Stop download')
+                    console.log(handlePtr)
+                    stop_download(handlePtr)
+                });
+
+                promise.then((arg: any) => {
+                    console.log('Done')
+                    console.log(arg)
+                }).catch((test: any) => {
                     console.error('Error')
                     console.error(test)
                 })

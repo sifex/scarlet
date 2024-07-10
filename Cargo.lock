@@ -799,6 +799,8 @@ version = "0.1.0"
 dependencies = [
  "digest",
  "downloader",
+ "futures",
+ "libc",
  "md-5",
  "neon",
  "once_cell",
