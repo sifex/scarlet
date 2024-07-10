@@ -15,7 +15,7 @@ interface SyncScarletModsFunction {
         destination_folder: string,
         files_to_download: Array<FileDownload>,
         callback: SyncScarletModsCallback
-    ): { promise: Promise<any>, handlePtr: bigint };
+    ): Promise<any>;
 }
 
 // Assuming `require('./agent.node')` returns an object with the `start_download` function,
@@ -260,7 +260,7 @@ export default class Main {
 
         ipcMain.on('start_download', () => {
             let files = fetchAndConvertXML(this.mods_base_url + 'repo.xml').then((files: FileDownload[]) => {
-                const {promise, handlePtr} = start_download(
+                const promise = start_download(
                     this.mods_base_url,
                     '/Users/alex/Development/scarlet-ui/test_folder/',
                     files,
@@ -270,8 +270,7 @@ export default class Main {
 
                 ipcMain.on('stop_download', () => {
                     console.log('Stop download')
-                    console.log(handlePtr)
-                    stop_download(handlePtr)
+                    stop_download()
                 });
 
                 promise.then((arg: any) => {

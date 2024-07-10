@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+
 use downloader::{Download, Downloader, DownloadSummary, Error, Verification};
 use md5::{Digest, Md5};
 use neon::prelude::*;
@@ -13,12 +13,10 @@ struct FileToDownload {
     pub md5_hash: String,
 }
 
-struct DownloadHandle {
-    cancel_flag: Arc<AtomicBool>,
-    thread: Option<thread::JoinHandle<()>>,
-}
+// Global cancellation flag
+static CANCELLATION_FLAG: AtomicBool = AtomicBool::new(false);
 
-fn start_download(mut cx: FunctionContext) -> JsResult<JsObject> {
+fn start_download(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let repo_url = cx.argument::<JsString>(0)?.value(&mut cx);
     let destination_folder = cx.argument::<JsString>(1)?.value(&mut cx);
     let files_to_download = cx.argument::<JsArray>(2)?;
@@ -38,13 +36,10 @@ fn start_download(mut cx: FunctionContext) -> JsResult<JsObject> {
     let (deferred, promise) = cx.promise();
     let channel = cx.channel();
 
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    let reporter = Arc::new(ScarletDownloadReporter::new(progress_callback, channel.clone(), cancel_flag.clone()));
+    let reporter = Arc::new(ScarletDownloadReporter::new(progress_callback, channel.clone()));
 
-    let cancel_flag_clone = cancel_flag.clone();
-
-    let download_thread = thread::spawn(move || {
-        let result = download_files(repo_url, destination_folder, files, reporter, cancel_flag_clone);
+    thread::spawn(move || {
+        let result = download_files(repo_url, destination_folder, files, reporter);
 
         deferred.settle_with(&channel, move |mut cx| {
             match result {
@@ -85,27 +80,11 @@ fn start_download(mut cx: FunctionContext) -> JsResult<JsObject> {
         });
     });
 
-    let download_handle = Arc::new(Mutex::new(DownloadHandle {
-        cancel_flag,
-        thread: Some(download_thread),
-    }));
-
-    let download_handle_ptr = Arc::into_raw(download_handle) as u64;
-
-    let result = cx.empty_object();
-    result.set(&mut cx, "promise", promise)?;
-    let handle_ptr = cx.number(download_handle_ptr as f64);
-    result.set(&mut cx, "handlePtr", handle_ptr)?;
-
-    Ok(result)
+    Ok(promise)
 }
 
 fn stop_download(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    let handle_ptr = cx.argument::<JsNumber>(0)?.value(&mut cx) as u64;
-    let download_handle = unsafe { Arc::from_raw(handle_ptr as *const Mutex<DownloadHandle>) };
-
-    let handle = download_handle.lock().unwrap();
-    handle.cancel_flag.store(true, Ordering::SeqCst);
+    CANCELLATION_FLAG.store(true, Ordering::SeqCst);
 
     Ok(cx.undefined())
 }
@@ -114,8 +93,7 @@ fn download_files(
     repo_url: String,
     destination_folder: String,
     files: Vec<FileToDownload>,
-    reporter: Arc<dyn downloader::progress::Reporter + Send + Sync>,
-    cancel_flag: Arc<AtomicBool>,
+    reporter: Arc<dyn downloader::progress::Reporter + Send + Sync>
 ) -> Result<Vec<Result<DownloadSummary, Error>>, Error> {
     let downloads: Vec<Download> = files
         .into_iter()
@@ -140,39 +118,18 @@ fn download_files(
                     }
                 }))
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     let mut downloader = Downloader::builder()
         .download_folder(Path::new(&destination_folder))
-        .parallel_requests(1)
+        .parallel_requests(3)
         .build()?;
 
-    let mut results = Vec::new();
+    let results = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        downloader.download(&*downloads)
+    }));
 
-    for download in downloads {
-        if cancel_flag.load(Ordering::SeqCst) {
-            return Err(Error::Setup("Download cancelled".to_string()));
-        }
-
-        let result = downloader.download(&[download]);
-        match result {
-            Ok(mut summaries) => {
-                if let Some(summary) = summaries.pop() {
-                    results.push(summary);
-                } else {
-                    results.push(Err(Error::DownloadDefinition("No summary".into())));
-                }
-            }
-            Err(e) => results.push(Err(e)),
-        }
-
-        // Check cancellation after each download
-        if cancel_flag.load(Ordering::SeqCst) {
-            return Err(Error::Setup("Download cancelled".to_string()));
-        }
-    }
-
-    Ok(results)
+    results.unwrap_or_else(|_e| Err(Error::Setup("Download cancelled".to_string())))
 }
 
 
@@ -183,11 +140,10 @@ struct ScarletDownloadReporter {
     current_progress: Arc<Mutex<u64>>,
     max_progress: Mutex<Option<u64>>,
     message: Mutex<String>,
-    cancel_flag: Arc<AtomicBool>,
 }
 
 impl ScarletDownloadReporter {
-    fn new(callback: Root<JsFunction>, channel: Channel, cancel_flag: Arc<AtomicBool>) -> Self {
+    fn new(callback: Root<JsFunction>, channel: Channel) -> Self {
         Self {
             callback: Arc::new(callback),
             channel: Arc::new(channel),
@@ -195,7 +151,6 @@ impl ScarletDownloadReporter {
             current_progress: Arc::new(Mutex::new(0)),
             max_progress: Mutex::new(None),
             message: Mutex::new(String::new()),
-            cancel_flag,
         }
     }
 
@@ -229,7 +184,7 @@ impl downloader::progress::Reporter for ScarletDownloadReporter {
     }
 
     fn progress(&self, current: u64) {
-        if self.cancel_flag.load(Ordering::SeqCst) {
+        if CANCELLATION_FLAG.load(Ordering::SeqCst) {
             panic!("Download cancelled");
         }
 
@@ -290,14 +245,20 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::time::Duration;
     use tempfile::tempdir;
+
+    use super::*;
 
     struct TestReporter;
 
     impl downloader::progress::Reporter for TestReporter {
         fn setup(&self, _max_progress: Option<u64>, _message: &str) {}
-        fn progress(&self, _current: u64) {}
+        fn progress(&self, _current: u64) {
+            if CANCELLATION_FLAG.load(Ordering::SeqCst) {
+                panic!("Download cancelled");
+            }
+        }
         fn set_message(&self, _message: &str) {}
         fn done(&self) {}
     }
@@ -315,14 +276,12 @@ mod tests {
         ];
 
         let reporter = Arc::new(TestReporter);
-        let cancel_flag = Arc::new(AtomicBool::new(false));
 
         let result = download_files(
             repo_url.to_string(),
             destination_folder.clone(),
             files_to_download,
             reporter,
-            cancel_flag,
         );
 
         assert!(result.is_ok(), "Download should succeed");
@@ -358,8 +317,6 @@ mod tests {
         ];
 
         let reporter = Arc::new(TestReporter);
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let cancel_flag_clone = cancel_flag.clone();
 
         let (tx, rx) = std::sync::mpsc::channel();
 
@@ -369,7 +326,6 @@ mod tests {
                 destination_folder.clone(),
                 files_to_download,
                 reporter,
-                cancel_flag_clone,
             );
             tx.send(result).unwrap();
         });
@@ -378,14 +334,16 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
 
         // Cancel the download
-        cancel_flag.store(true, Ordering::SeqCst);
+        CANCELLATION_FLAG.store(true, Ordering::SeqCst);
 
         // Wait for the download thread to finish
         download_thread.join().unwrap();
 
         // Check the result
         match rx.recv() {
-            Ok(Ok(_)) => panic!("Download completed despite cancellation"),
+            Ok(Ok(a)) => { 
+                panic!("Download should have been cancelled, but got: {:?}", a);
+            },
             Ok(Err(e)) if format!("{:?}", e).contains("Download cancelled") => {
                 // This is the expected outcome: the download was cancelled
                 assert!(true, "Download was successfully cancelled");
