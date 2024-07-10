@@ -1,12 +1,17 @@
+mod tests;
+mod reporter;
+
 use std::{fs, thread};
 use std::io::Read;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use downloader::{Download, Downloader, DownloadSummary, Error, Verification};
+use downloader::progress::Reporter;
 use md5::{Digest, Md5};
 use neon::prelude::*;
+use reporter::ScarletDownloadReporter;
 
 struct FileToDownload {
     pub path: String,
@@ -73,6 +78,7 @@ fn start_download(mut cx: FunctionContext) -> JsResult<JsPromise> {
                         }
                         js_results.set(&mut cx, i as u32, obj)?;
                     }
+                    
                     Ok(js_results)
                 }
                 Err(e) => {
@@ -127,11 +133,15 @@ fn download_files(
         .parallel_requests(1)
         .build()?;
 
+    reporter.set_message("Downloading files");
+        
     let results = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         downloader.download(&*downloads)
     }));
 
     let results: Result<Vec<Result<DownloadSummary, Error>>, Error> = results.unwrap_or_else(|_e| Err(Error::Setup("Download cancelled".to_string())));
+
+    reporter.set_message("Finalising Results");
     
     // If we find an item that matches downloader::Error::Download(DownloadSummary), we need to verify that the file was downloaded
     // and the hash is correct. We can map the error to a Result<DownloadSummary, Error> and provide the verification status back to the client.
@@ -168,91 +178,13 @@ fn download_files(
             }
         }).collect()
     });
+
+    reporter.set_message("Finished Downloading");
+    reporter.done();
     
     return results;
 }
 
-
-struct ScarletDownloadReporter {
-    callback: Arc<Root<JsFunction>>,
-    channel: Arc<Channel>,
-    last_update: Mutex<std::time::Instant>,
-    current_progress: Arc<Mutex<u64>>,
-    max_progress: Mutex<Option<u64>>,
-    message: Mutex<String>,
-}
-
-impl ScarletDownloadReporter {
-    fn new(callback: Root<JsFunction>, channel: Channel) -> Self {
-        Self {
-            callback: Arc::new(callback),
-            channel: Arc::new(channel),
-            last_update: Mutex::new(std::time::Instant::now()),
-            current_progress: Arc::new(Mutex::new(0)),
-            max_progress: Mutex::new(None),
-            message: Mutex::new(String::new()),
-        }
-    }
-
-    fn call_js_callback(&self, current: u64, max: Option<u64>, message: String) {
-        let callback = self.callback.clone();
-        let channel = self.channel.clone();
-
-        channel.send(move |mut cx| {
-            let callback = callback.to_inner(&mut cx);
-            let this = cx.undefined();
-            let args = vec![
-                cx.number(current as f64).upcast(),
-                match max {
-                    Some(m) => cx.number(m as f64).upcast(),
-                    None => cx.undefined().upcast(),
-                },
-                cx.string(&message).upcast(),
-            ];
-
-            callback.call(&mut cx, this, args)?;
-            Ok(())
-        });
-    }
-}
-
-impl downloader::progress::Reporter for ScarletDownloadReporter {
-    fn setup(&self, max_progress: Option<u64>, message: &str) {
-        *self.max_progress.lock().unwrap() = max_progress;
-        *self.message.lock().unwrap() = message.to_owned();
-        self.call_js_callback(0, max_progress, message.to_owned());
-    }
-
-    fn progress(&self, current: u64) {
-        if CANCELLATION_FLAG.load(Ordering::SeqCst) {
-            panic!("Download cancelled");
-        }
-
-        let mut progress = self.current_progress.lock().unwrap();
-        *progress = current;
-        let mut last_update = self.last_update.lock().unwrap();
-        if last_update.elapsed().as_millis() >= 100 {
-            *last_update = std::time::Instant::now();
-            let max_progress = *self.max_progress.lock().unwrap();
-            let message = self.message.lock().unwrap().clone();
-            self.call_js_callback(current, max_progress, message);
-        }
-    }
-
-    fn set_message(&self, message: &str) {
-        *self.message.lock().unwrap() = message.to_owned();
-        let current = *self.current_progress.lock().unwrap();
-        let max_progress = *self.max_progress.lock().unwrap();
-        self.call_js_callback(current, max_progress, message.to_owned());
-    }
-
-    fn done(&self) {
-        let max_progress = *self.max_progress.lock().unwrap();
-        let message = self.message.lock().unwrap().clone();
-        let current = *self.current_progress.lock().unwrap();
-        self.call_js_callback(current, max_progress, message);
-    }
-}
 
 fn md5_hash(mut cx: FunctionContext) -> JsResult<JsString> {
     let file_path = cx.argument::<JsString>(0)?.value(&mut cx);
@@ -283,173 +215,4 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-    use serial_test::serial;
-    use tempfile::tempdir;
 
-    use super::*;
-
-    struct TestReporter;
-
-    impl downloader::progress::Reporter for TestReporter {
-        fn setup(&self, _max_progress: Option<u64>, _message: &str) {}
-        fn progress(&self, _current: u64) {
-            if CANCELLATION_FLAG.load(Ordering::SeqCst) {
-                panic!("Download cancelled");
-            }
-        }
-        fn set_message(&self, _message: &str) {}
-        fn done(&self) {}
-    }
-
-    #[serial]
-    #[test]
-    fn test_download_files() {
-        let temp_dir = tempdir().unwrap();
-        let destination_folder = temp_dir.path().to_str().unwrap().to_string();
-        let repo_url = "https://www.electronjs.org";
-        let files_to_download = vec![
-            FileToDownload {
-                path: "/assets/img/logo.svg".to_string(),
-                md5_hash: "bbe5da8f172a8af961362b0f8ad84175".to_string(),
-            }
-        ];
-
-        let reporter = Arc::new(TestReporter);
-
-        let result = download_files(
-            repo_url.to_string(),
-            destination_folder.clone(),
-            files_to_download,
-            reporter,
-        );
-
-        assert!(result.is_ok(), "Download should succeed");
-        let summaries = result.unwrap();
-        assert_eq!(summaries.len(), 1, "Should have one download summary");
-
-        for summary_result in summaries {
-            match summary_result {
-                Ok(summary) => {
-                    assert_eq!(summary.verified, Verification::Ok, "File {} should be verified", summary.file_name.display());
-                    assert!(!summary.status.is_empty(), "Status should not be empty");
-                }
-                Err(e) => panic!("Download failed: {:?}", e),
-            }
-        }
-    }
-
-    #[serial]
-    #[test]
-    fn test_download_file_twice() {
-        let temp_dir = tempdir().unwrap();
-        let destination_folder = temp_dir.path().to_str().unwrap().to_string();
-        let repo_url = "https://www.electronjs.org";
-        let files_to_download = vec![
-            FileToDownload {
-                path: "/assets/img/logo.svg".to_string(),
-                md5_hash: "bbe5da8f172a8af961362b0f8ad84175".to_string(),
-            }
-        ];
-
-        let reporter = Arc::new(TestReporter);
-
-        let result = download_files(
-            repo_url.to_string(),
-            destination_folder.clone(),
-            files_to_download,
-            reporter,
-        );
-        
-        let files_to_download = vec![
-            FileToDownload {
-                path: "/assets/img/logo.svg".to_string(),
-                md5_hash: "bbe5da8f172a8af961362b0f8ad84175".to_string(),
-            }
-        ];
-
-        let reporter = Arc::new(TestReporter);
-
-        let result = download_files(
-            repo_url.to_string(),
-            destination_folder.clone(),
-            files_to_download,
-            reporter,
-        );
-
-        assert!(result.is_ok(), "Download should succeed");
-        let summaries = result.unwrap();
-        assert_eq!(summaries.len(), 1, "Should have one download summary");
-
-        for summary_result in summaries {
-            match summary_result {
-                Ok(summary) => {
-                    assert_eq!(summary.verified, Verification::Ok, "File {} should be verified", summary.file_name.display());
-                    assert!(!summary.status.is_empty(), "Status should not be empty");
-                }
-                Err(e) => panic!("Download failed: {:?}", e),
-            }
-        }
-    }
-
-    #[serial]
-    #[test]
-    fn test_cancelling_download() {
-        let temp_dir = tempdir().unwrap();
-        let destination_folder = temp_dir.path().to_str().unwrap().to_string();
-        let repo_url = "https://www.electronjs.org";
-        let files_to_download = vec![
-            FileToDownload {
-                path: "/assets/img/logo.svg".to_string(),
-                md5_hash: "bbe5da8f172a8af961362b0f8ad84175".to_string(),
-            },
-            // Add more files to make the download take longer
-            FileToDownload {
-                path: "/assets/img/hero-cloud.png".to_string(),
-                md5_hash: "fake_hash_to_force_redownload".to_string(),
-            },
-        ];
-
-        let reporter = Arc::new(TestReporter);
-
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        let download_thread = thread::spawn(move || {
-            let result = download_files(
-                repo_url.to_string(),
-                destination_folder.clone(),
-                files_to_download,
-                reporter,
-            );
-            tx.send(result).unwrap();
-        });
-
-        // Wait a bit to ensure the download has started
-        thread::sleep(Duration::from_millis(100));
-
-        // Cancel the download
-        CANCELLATION_FLAG.store(true, Ordering::SeqCst);
-
-        // Wait for the download thread to finish
-        download_thread.join().unwrap();
-
-        // Check the result
-        match rx.recv() {
-            Ok(Ok(a)) => {
-                panic!("Download should have been cancelled, but got: {:?}", a);
-            },
-            Ok(Err(e)) if format!("{:?}", e).contains("Download cancelled") => {
-                // This is the expected outcome: the download was cancelled
-                assert!(true, "Download was successfully cancelled");
-            },
-            Ok(Err(e)) => panic!("Unexpected error: {:?}", e),
-            Err(e) => panic!("Channel error: {:?}", e),
-        }
-
-        // Verify that no files (or only partial files) were downloaded
-        let downloaded_files: Vec<_> = temp_dir.path().read_dir().unwrap().collect();
-        assert!(downloaded_files.len() <= 1, "At most one file should be partially downloaded");
-    }
-}

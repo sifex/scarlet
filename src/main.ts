@@ -3,6 +3,8 @@ import * as path from "path";
 import {AppUpdater, autoUpdater} from "electron-updater";
 import {XMLParser} from "fast-xml-parser";
 
+
+
 // Define the callback function type
 interface SyncScarletModsCallback {
     (num: number, max: number, message: string): void;
@@ -14,7 +16,7 @@ interface SyncScarletModsFunction {
         repo_url: string,
         destination_folder: string,
         files_to_download: Array<FileDownload>,
-        callback: SyncScarletModsCallback
+        callback: (status: string, num: number, max: number, message: string) => void
     ): Promise<any>;
 }
 
@@ -258,14 +260,20 @@ export default class Main {
 
         ipcMain.handle('ping', ping)
 
-        ipcMain.on('start_download', () => {
-            let files = fetchAndConvertXML(this.mods_base_url + 'repo.xml').then((files: FileDownload[]) => {
+        ipcMain.on('stop_download', () => {
+            console.log('Stop download')
+            stop_download()
+        });
+
+        ipcMain.on('start_download', (evt, destination_folder: string) => {
+            console.log('Start download')
+            fetchAndConvertXML(this.mods_base_url + 'repo.xml').then((files: FileDownload[]) => {
                 const promise = start_download(
                     this.mods_base_url,
-                    '/Users/alex/Development/scarlet-ui/test_folder/',
+                    destination_folder,
                     files,
-                    (num: number, max: number, message: string) => {
-                        console.info(num, max, message)
+                    (status: string, num: number, max: number, message: string) => {
+                        Main.mainWindow.webContents.send('on_status_update', status, num, max, message)
                     });
 
                 ipcMain.on('stop_download', () => {
@@ -274,11 +282,11 @@ export default class Main {
                 });
 
                 promise.then((arg: any) => {
-                    console.log('Done')
                     console.log(arg)
-                }).catch((test: any) => {
+                    Main.mainWindow.webContents.send('on_status_update', 'done', 0,0, arg)
+                }).catch((arg: any) => {
                     console.error('Error')
-                    console.error(test)
+                    Main.mainWindow.webContents.send('on_status_update', 'error', 0,0, arg)
                 })
             })
         })
