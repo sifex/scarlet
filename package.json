@@ -6,8 +6,9 @@
   "main": "./lib/app.js",
   "scripts": {
     "build-agent": "cargo-cp-artifact -nc lib/agent.node -- cargo build --message-format=json-render-diagnostics",
-    "build-electron": "tsc && copyfiles -E -f ./src/client/*.js ./lib/client ",
-    "build": "npm run build-agent && npm run build-electron",
+    "build-agent-release": "cargo-cp-artifact -nc lib/agent.node -- cargo build --message-format=json-render-diagnostics",
+    "build-electron": "tsc && copyfiles -E -f ./src/client/*.js ./lib/client",
+    "build": "npm run build-agent-release && npm run build-electron",
     "start": "npm run build && electron ./lib/app.js",
     "deploy": "npm run build && node_modules/.bin/electron-builder --mac --dir"
   },

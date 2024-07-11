@@ -1,118 +1,59 @@
-import {BrowserWindow, ipcMain, shell, dialog} from 'electron';
+import {BrowserWindow, ipcMain, shell, dialog, App} from 'electron';
 import * as path from "path";
-import {AppUpdater, autoUpdater} from "electron-updater";
-import {XMLParser} from "fast-xml-parser";
+import {autoUpdater} from "electron-updater";
+import {fetchAndConvertXML} from './utils';
+import {FileDownload} from './types';
 
-
-
-// Define the callback function type
-interface SyncScarletModsCallback {
-    (num: number, max: number, message: string): void;
-}
-
-// Define the type for the `start_download` function
-interface SyncScarletModsFunction {
-    (
-        repo_url: string,
-        destination_folder: string,
-        files_to_download: Array<FileDownload>,
-        callback: (status: string, num: number, max: number, message: string) => void
-    ): Promise<any>;
-}
-
-// Assuming `require('./agent.node')` returns an object with the `start_download` function,
-// you can cast it to the defined type for better type checking.
-const {start_download, ping, stop_download}: {
-    start_download: SyncScarletModsFunction,
-    ping: any,
-    stop_download: any
+const {
+    ping,
+    create_download_task,
+    get_progress,
+    start_download,
+    stop_download
+}: {
+    ping: () => void,
+    create_download_task: (destination_path: string, files: Array<FileDownload>) => void,
+    get_progress: () => Promise<any>,
+    start_download: () => Promise<any>
+    stop_download: () => void
 } = require('./agent.node');
-
-
-interface FileDownload {
-    path: string,
-    md5_hash: string,
-}
-
-async function fetchAndConvertXML(url: string): Promise<FileDownload[]> {
-    try {
-        // Fetch the XML data
-        const response = await fetch(url);
-        const xmlData = await response.text();
-
-        // Parse the XML
-        const parser = new XMLParser();
-        const jsonObj = parser.parse(xmlData);
-
-        // Extract file information
-        const fileDownloads: FileDownload[] = [];
-
-        if (Array.isArray(jsonObj.theupdates.file)) {
-            jsonObj.theupdates.file.forEach((file: any) => {
-                fileDownloads.push({
-                    path: file.name,
-                    md5_hash: file.hash
-                });
-            });
-        } else if (jsonObj.theupdates.file) {
-            // If there's only one file, it might not be in an array
-            fileDownloads.push({
-                path: jsonObj.theupdates.file.name,
-                md5_hash: jsonObj.theupdates.file.hash
-            });
-        }
-
-        return fileDownloads;
-    } catch (error) {
-        console.error('Error fetching or parsing XML:', error);
-        throw error;
-    }
-}
 
 export default class Main {
     static mainWindow: Electron.BrowserWindow;
     static application: Electron.App;
     static browserWindow: typeof BrowserWindow;
 
-    private static isDev = (): boolean => process.argv[2] === '--dev'
-    private static scarlet_api_url = () => Main.isDev() ? 'http://localhost/' : 'https://scarlet.australianarmedforces.org/';
-    private static protocol = () => Main.isDev() ? 'scarlet-dev' : 'scarlet';
-
+    private static isDev = (): boolean => process.argv[2] === '--dev';
+    private static scarlet_api_url = (): string => Main.isDev() ? 'http://localhost/' : 'https://scarlet.australianarmedforces.org/';
+    private static protocol = (): string => Main.isDev() ? 'scarlet-dev' : 'scarlet';
     private static mods_base_url = 'https://mods.australianarmedforces.org/clans/2/repo/';
 
-    static main(app: Electron.App, browserWindow: typeof BrowserWindow) {
-
-
+    /**
+     * Main entry point of the application
+     * @param app Electron.App instance
+     * @param browserWindow BrowserWindow constructor
+     */
+    static main(app: App, browserWindow: typeof BrowserWindow): void {
         if (!app.requestSingleInstanceLock()) {
-            app.quit()
+            app.quit();
         }
-        Main.browserWindow = browserWindow
+        Main.browserWindow = browserWindow;
         Main.application = app;
 
-        /**
-         * Bits
-         */
-        Main.registerUrlHandler()
-        Main.registerIPCEvents()
-        // Main.registerAutoUpdater() // TODO: Re-enable this
+        Main.registerUrlHandler();
+        Main.registerIPCEvents();
+        // Main.registerAutoUpdater(); // TODO: Re-enable this
 
-        /**
-         * Application Event Listeners
-         */
         Main.application.on('window-all-closed', Main.onWindowAllClosed);
         Main.application.on('second-instance', Main.onSecondInstance);
-        Main.application.on('open-url', Main.onOpenUrl)
+        Main.application.on('open-url', Main.onOpenUrl);
         Main.application.on('ready', Main.onReady);
     }
 
     /**
-     * When the application is ready
-     *
-     * Loads the main Window, injects preload.js and renders the web page
-     *
-     * @private
+     * Initializes the main window when the application is ready
      */
-    private static onReady() {
+    private static onReady(): void {
         Main.mainWindow = new Main.browserWindow({
             width: 1000,
             height: 600,
@@ -122,90 +63,74 @@ export default class Main {
             show: false,
             frame: false,
             transparent: true,
-            // frame: false
             webPreferences: {
                 sandbox: true,
+                nodeIntegration: false,
                 preload: path.join(__dirname, Main.isDev() ? './client/preload.js' : '../client/preload.js')
             }
-        })
+        });
 
-        /**
-         * Load the Scarlet Website
-         */
         Main.mainWindow.loadURL(Main.scarlet_api_url() + 'electron/intro/', {extraHeaders: 'pragma: no-cache\n'});
         Main.mainWindow.on('closed', Main.onClose);
-        Main.mainWindow.once('ready-to-show', Main.onReadyToShow)
+        Main.mainWindow.once('ready-to-show', Main.onReadyToShow);
     }
 
     /**
-     * Actions something when all the windows are closed
-     *
-     * @private
+     * Quits the application when all windows are closed
      */
-    private static onWindowAllClosed() {
+    private static onWindowAllClosed(): void {
         Main.application.quit();
     }
 
     /**
-     * Opens a URL on the Window
-     *
-     * @private
+     * Handles the closing of the main window
      */
-    private static onClose() {
+    private static onClose(): void {
         Main.mainWindow = null;
     }
 
     /**
-     * Opens a URL on the Window
-     *
-     * @private
+     * Shows the main window when it's ready
      */
-    private static onReadyToShow() {
-        Main.mainWindow.show()
-        Main.isDev() ? Main.mainWindow.webContents.openDevTools() : ''
+    private static onReadyToShow(): void {
+        Main.mainWindow.show();
+        Main.isDev() ? Main.mainWindow.webContents.openDevTools() : null;
     }
 
     /**
-     * Logs into the Application, requires token
-     *
-     * @private
-     * @param url
+     * Logs into the application using a token
+     * @param url The URL containing the token
      */
-    private static login(url: String) {
-        let token = url.replace(Main.protocol() + '://', '')
-
+    private static login(url: string): Promise<void> {
+        let token = url.replace(Main.protocol() + '://', '');
         return Main.mainWindow.loadURL(
             Main.scarlet_api_url() + 'electron/steam/verify?token=' + token,
             {extraHeaders: 'pragma: no-cache\n'}
-        )
+        );
     }
 
     /**
-     * Register all the URL handlers for opening the application as `scarlet://`
-     *
-     * @private
+     * Registers the URL handler for the application
      */
-    private static registerUrlHandler() {
+    private static registerUrlHandler(): void {
         if (process.defaultApp) {
             if (process.argv.length >= 2) {
                 Main.application.setAsDefaultProtocolClient(
                     Main.protocol(),
                     process.execPath,
                     [path.resolve(process.argv[1])]
-                )
+                );
             }
         } else {
-            Main.application.setAsDefaultProtocolClient(Main.protocol())
+            Main.application.setAsDefaultProtocolClient(Main.protocol());
         }
     }
 
     /**
-     * Install Auto Updater
-     *
-     * @private
+     * Registers the auto-updater for the application
      */
-    private static registerAutoUpdater() {
-        autoUpdater.checkForUpdatesAndNotify()
+    private static registerAutoUpdater(): void {
+        autoUpdater.checkForUpdatesAndNotify();
 
         autoUpdater.on('update-available', () => {
             Main.mainWindow.webContents.send('update_available');
@@ -219,112 +144,79 @@ export default class Main {
     }
 
     /**
-     * Install Inter Process Comms Events
-     *
-     * This will only handle the [Web] -> [Electron] events,
-     * for [Electron] -> [Web] events, checkout `preload.js`
-     *
-     * @private
+     * Registers IPC events for communication between main and renderer processes
      */
-    private static registerIPCEvents() {
+    private static registerIPCEvents(): void {
         ipcMain.on('close', () => Main.mainWindow.close());
         ipcMain.on('minimise', () => Main.mainWindow.minimize());
-
         ipcMain.on('steam_login', () => {
-            shell.openExternal(Main.scarlet_api_url() + 'browser/steam/verify')
+            shell.openExternal(Main.scarlet_api_url() + 'browser/steam/verify');
         });
-
         ipcMain.on('open_admin_page_in_browser', () => {
-            shell.openExternal(Main.scarlet_api_url() + 'admin')
+            shell.openExternal(Main.scarlet_api_url() + 'admin');
         });
-
         ipcMain.on('quit', () => {
-            Main.mainWindow = null
+            Main.mainWindow = null;
         });
-
         ipcMain.on('open_choose_install_dir', (evt, current_directory: string) => {
             dialog.showOpenDialog(Main.mainWindow, {
                 properties: ['openDirectory'],
                 defaultPath: current_directory ?? '',
                 message: 'Select the path to your Arma 3 Folder'
             }).then(result => {
-                console.log(result.canceled)
-                console.log(result.filePaths)
                 if (result.filePaths[0]) {
-                    Main.mainWindow.webContents.send('on_select_install_dir', result.filePaths[0])
+                    Main.mainWindow.webContents.send('on_select_install_dir', result.filePaths[0]);
                 }
             }).catch(err => {
-                console.log(err)
-            })
+                console.error(err);
+            });
         });
 
-        ipcMain.handle('ping', ping)
+        ipcMain.handle('ping', ping);
 
-        ipcMain.on('stop_download', () => {
-            console.log('Stop download')
-            stop_download()
-        });
+        ipcMain.handle('stop_download', stop_download);
+        ipcMain.handle('get_progress', get_progress);
 
-        ipcMain.on('start_download', (evt, destination_folder: string) => {
-            console.log('Start download')
-            fetchAndConvertXML(this.mods_base_url + 'repo.xml').then((files: FileDownload[]) => {
-                const promise = start_download(
-                    this.mods_base_url,
-                    destination_folder,
-                    files,
-                    (status: string, num: number, max: number, message: string) => {
-                        Main.mainWindow.webContents.send('on_status_update', status, num, max, message)
-                    });
-
-                ipcMain.on('stop_download', () => {
-                    console.log('Stop download')
-                    stop_download()
-                });
-
-                promise.then((arg: any) => {
-                    console.log(arg)
-                    Main.mainWindow.webContents.send('on_status_update', 'done', 0,0, arg)
-                }).catch((arg: any) => {
-                    console.error('Error')
-                    Main.mainWindow.webContents.send('on_status_update', 'error', 0,0, arg)
+        ipcMain.handle('start_download', (evt, destination_folder: string) => {
+            fetchAndConvertXML(this.mods_base_url + 'repo.xml')
+                .then((files: FileDownload[]) => {
+                    create_download_task(
+                        destination_folder,
+                        files
+                    )
+                    return start_download()
                 })
-            })
+                .catch((err) => {
+                    console.error(err);
+                });
         })
     }
 
     /**
-     * Handle the instance when a second window appears.
-     *
-     * In this case we actually want to login as sometimes the user will open Scarlet
-     * with the `scarlet://` url handler
-     *
-     * @param event
-     * @param commandLine
-     * @param workingDirectory
-     * @private
+     * Handles the second instance of the application
+     * @param event The event object
+     * @param commandLine The command line arguments
+     * @param workingDirectory The working directory
      */
-    private static onSecondInstance(event: Electron.Event | Electron.Session, commandLine: any, workingDirectory: unknown) {
-        // Someone tried to run a second instance, we should focus our window.
+    private static onSecondInstance(event: Electron.Event | Electron.Session, commandLine: string[], workingDirectory: string): void {
         if (Main.mainWindow) {
-            if (Main.mainWindow.isMinimized()) Main.mainWindow.restore()
-            Main.mainWindow.focus()
+            if (Main.mainWindow.isMinimized()) Main.mainWindow.restore();
+            Main.mainWindow.focus();
         }
 
-        const url = commandLine.pop().slice(0, -1)
+        const url = commandLine.pop().slice(0, -1);
 
         if (url.startsWith(Main.protocol())) {
-            Main.login(url)
+            Main.login(url);
         }
     }
 
     /**
-     * Opens a URL on the Window
-     *
-     * @param event
-     * @param url
-     * @private
+     * Handles opening URLs
+     * @param event The event object
+     * @param url The URL to open
      */
-    private static onOpenUrl(event: Event, url: string) {
-        return Main.login(url)
+    private static onOpenUrl(event: Event, url: string): Promise<void> {
+        return Main.login(url);
     }
 }

@@ -17,10 +17,9 @@ contextBridge.exposeInMainWorld('scarlet', {
     on_select_install_dir: (callback) => ipcRenderer.on('on_select_install_dir', callback),
 
     // Rust Bindings
-    start_download: (destination_folder) => ipcRenderer.send("start_download", destination_folder),
-    stop_download: () => ipcRenderer.send('stop_download'),
-    on_status_update: (callback) => ipcRenderer.on('on_status_update', callback),
+    start_download: (destination_folder) => ipcRenderer.invoke("start_download", destination_folder),
+    stop_download: () => ipcRenderer.invoke('stop_download'),
+    get_progress: () => ipcRenderer.invoke('get_progress'),
     ping: () => ipcRenderer.invoke("ping"),
-
 })
 
