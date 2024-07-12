@@ -2,9 +2,9 @@ name: Compile Rust Library
 
 on:
     push:
-        branches: "*"
+        branches: ["*"]
     pull_request:
-        branches: "*"
+        branches: ["*"]
 
 jobs:
     build:
