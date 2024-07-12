@@ -20,7 +20,7 @@ tempfile = "3.10.1"
 futures = "0.3.30"
 libc = "0.2.155"
 serial_test = "3.1.1"
-reqwest = { version = "0.11.27", features = ["stream"] }
+reqwest = { version = "^0.12", features = ["stream"] }
 mockito = "1.4.0"
 thiserror = "1.0.61"
 lazy_static = "1.5.0"
