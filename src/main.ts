@@ -6,15 +6,13 @@ import {FileDownload} from './types';
 
 const {
     ping,
-    create_download_task,
     get_progress,
     start_download,
     stop_download
 }: {
     ping: () => void,
-    create_download_task: (destination_path: string, files: Array<FileDownload>) => void,
     get_progress: () => Promise<any>,
-    start_download: () => Promise<any>
+    start_download: (destination_path: string, files: Array<FileDownload>) => Promise<any>,
     stop_download: () => void
 } = require('./agent.node');
 
@@ -27,6 +25,8 @@ export default class Main {
     private static scarlet_api_url = (): string => Main.isDev() ? 'http://localhost/' : 'https://scarlet.australianarmedforces.org/';
     private static protocol = (): string => Main.isDev() ? 'scarlet-dev' : 'scarlet';
     private static mods_base_url = 'https://mods.australianarmedforces.org/clans/2/repo/';
+
+    private static files: Array<FileDownload> = []
 
     /**
      * Main entry point of the application
@@ -64,11 +64,16 @@ export default class Main {
             frame: false,
             transparent: true,
             webPreferences: {
-                sandbox: true,
-                nodeIntegration: false,
-                preload: path.join(__dirname, Main.isDev() ? './client/preload.js' : '../client/preload.js')
+                sandbox: false,
+                preload: path.join(__dirname, 'client/preload.js')
             }
         });
+
+        fetchAndConvertXML(Main.mods_base_url + 'repo.xml')
+            .then((files: FileDownload[]) => {
+                Main.files=files
+            })
+
 
         Main.mainWindow.loadURL(Main.scarlet_api_url() + 'electron/intro/', {extraHeaders: 'pragma: no-cache\n'});
         Main.mainWindow.on('closed', Main.onClose);
@@ -177,18 +182,11 @@ export default class Main {
         ipcMain.handle('stop_download', stop_download);
         ipcMain.handle('get_progress', get_progress);
 
-        ipcMain.handle('start_download', (evt, destination_folder: string) => {
-            fetchAndConvertXML(this.mods_base_url + 'repo.xml')
-                .then((files: FileDownload[]) => {
-                    create_download_task(
-                        destination_folder,
-                        files
-                    )
-                    return start_download()
-                })
-                .catch((err) => {
-                    console.error(err);
-                });
+        ipcMain.handle('start_download', async (evt, destination_folder: string) => {
+            return start_download(
+                destination_folder,
+                Main.files
+            );
         })
     }
 

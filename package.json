@@ -5,12 +5,12 @@
   "description": "Scarlet is a mod updater for the Australian Armed Forces",
   "main": "./lib/app.js",
   "scripts": {
-    "build-agent": "cargo-cp-artifact -nc lib/agent.node -- cargo build --message-format=json-render-diagnostics",
-    "build-agent-release": "cargo-cp-artifact -nc lib/agent.node -- cargo build --message-format=json-render-diagnostics",
+    "build-agent": "cargo-cp-artifact -nc lib/agent.node -- cargo build --target x86_64-pc-windows-gnu --message-format=json-render-diagnostics",
+    "build-agent-release": "cargo-cp-artifact -nc lib/agent.node -- cargo build --target x86_64-pc-windows-gnu --message-format=json-render-diagnostics",
     "build-electron": "tsc && copyfiles -E -f ./src/client/*.js ./lib/client",
     "build": "npm run build-agent-release && npm run build-electron",
     "start": "npm run build && electron ./lib/app.js",
-    "deploy": "npm run build && node_modules/.bin/electron-builder --mac --dir"
+    "deploy": "npm run build && electron-builder build --win --publish always --config electron-builder.yml"
   },
   "repository": {
     "type": "git",
@@ -25,8 +25,8 @@
   "devDependencies": {
     "cargo-cp-artifact": "^0.1",
     "copyfiles": "^2.4.1",
-    "electron": "^24.1.2",
-    "electron-builder": "^24.2.1",
+    "electron": "31.2.0",
+    "electron-builder": "^24.13.3",
     "typescript": "^5.0.4"
   }
 }
