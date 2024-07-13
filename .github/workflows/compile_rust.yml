@@ -36,5 +36,5 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                   name: scarlet-${{ matrix.target }}
-                  path: lib/agent.node
+                  path: ./target/debug/libscarlet.dylib
                   retention-days: 7
