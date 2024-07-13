@@ -1,0 +1,18 @@
+appId: com.aaf.ScarletUpdater
+protocols:
+  - name: Scarlet URL Handler
+    schemes:
+      - scarlet
+files:
+  - "lib/**/*"
+extraResources:
+  - from: "./lib/agent.node"
+    to: "./agent.node"
+    filter:
+      - "**/*"
+win:
+  target: nsis
+nsis:
+  include: assets/installer.nsh
+  oneClick: true
+  perMachine: true

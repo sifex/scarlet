@@ -37,13 +37,6 @@ jobs:
             -   name: Install dependencies
                 run: npm ci
 
-            -   name: Upload artifact
-                uses: actions/upload-artifact@v4
-                with:
-                    name: scarlet-${{ matrix.target }}
-                    path: target/
-                    retention-days: 7
-
             -   name: Build for ${{ matrix.os }}
                 run: |
                     if [ "${{ matrix.os }}" == "macos-latest" ]; then
