@@ -5,3 +5,4 @@ electron-builder.yml
 .DS_Store
 target/
 /lib/
+out/

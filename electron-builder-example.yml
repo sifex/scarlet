@@ -20,6 +20,6 @@ extraResources:
 win:
   target: nsis
 nsis:
-  include: build/installer.nsh
+  include: assets/installer.nsh
   oneClick: true
   perMachine: true

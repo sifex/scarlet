@@ -65,7 +65,7 @@ export default class Main {
             transparent: true,
             webPreferences: {
                 sandbox: false,
-                preload: path.join(__dirname, 'client/preload.js')
+                preload: path.join(__dirname, 'preload.js')
             }
         });
 
