@@ -80,7 +80,8 @@ impl DownloadManager {
         let destination_folder = destination_folder.as_ref().to_path_buf();
         let num_files = files.len();
 
-        self.cancellation_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.cancellation_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
 
         self.initialize_progress(num_files).await;
 
@@ -158,7 +159,11 @@ impl DownloadManager {
         }
     }
 
-    async fn download_file(&self, file: &FileToDownload, file_path: &Path) -> Result<(), DownloadError> {
+    async fn download_file(
+        &self,
+        file: &FileToDownload,
+        file_path: &Path,
+    ) -> Result<(), DownloadError> {
         self.prepare_for_download().await;
 
         let response = self.client.get(&file.url).send().await?;
@@ -201,7 +206,11 @@ impl DownloadManager {
         progress.current_file_total_size = total_size;
     }
 
-    async fn verify_file(&self, file_path: &Path, expected_hash: &str) -> Result<(), DownloadError> {
+    async fn verify_file(
+        &self,
+        file_path: &Path,
+        expected_hash: &str,
+    ) -> Result<(), DownloadError> {
         let mut progress = self.progress.lock().await;
         progress.status = DownloadStatus::Verifying;
         drop(progress);
@@ -226,11 +235,13 @@ impl DownloadManager {
     }
 
     fn is_cancelled(&self) -> bool {
-        self.cancellation_flag.load(std::sync::atomic::Ordering::SeqCst)
+        self.cancellation_flag
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn cancel(&self) {
-        self.cancellation_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cancellation_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub async fn get_progress(&self) -> DownloadProgress {

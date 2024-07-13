@@ -24,9 +24,18 @@ fn start_download(mut cx: FunctionContext) -> JsResult<JsPromise> {
         .map(|v| {
             let obj = v.downcast::<JsObject, _>(&mut cx).unwrap();
             FileToDownload {
-                url: obj.get::<JsString, _, _>(&mut cx, "url").unwrap().value(&mut cx),
-                path: obj.get::<JsString, _, _>(&mut cx, "path").unwrap().value(&mut cx),
-                md5_hash: obj.get::<JsString, _, _>(&mut cx, "md5_hash").unwrap().value(&mut cx),
+                url: obj
+                    .get::<JsString, _, _>(&mut cx, "url")
+                    .unwrap()
+                    .value(&mut cx),
+                path: obj
+                    .get::<JsString, _, _>(&mut cx, "path")
+                    .unwrap()
+                    .value(&mut cx),
+                md5_hash: obj
+                    .get::<JsString, _, _>(&mut cx, "md5_hash")
+                    .unwrap()
+                    .value(&mut cx),
             }
         })
         .collect();
@@ -37,11 +46,9 @@ fn start_download(mut cx: FunctionContext) -> JsResult<JsPromise> {
 
     RUNTIME.spawn(async move {
         let result = manager.download(destination, files).await;
-        deferred.settle_with(&channel, move |mut cx| {
-            match result {
-                Ok(()) => Ok(cx.boolean(true)),
-                Err(e) => cx.throw_error(e.to_string()),
-            }
+        deferred.settle_with(&channel, move |mut cx| match result {
+            Ok(()) => Ok(cx.boolean(true)),
+            Err(e) => cx.throw_error(e.to_string()),
         });
     });
 
@@ -50,7 +57,6 @@ fn start_download(mut cx: FunctionContext) -> JsResult<JsPromise> {
 
 fn stop_download(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     DOWNLOAD_MANAGER.cancel();
-
 
     Ok(cx.undefined())
 }
@@ -71,8 +77,13 @@ fn get_progress(mut cx: FunctionContext) -> JsResult<JsPromise> {
             obj.set(&mut cx, "filesTotal", files_total)?;
             let files_total_completed = cx.number(progress.files_total_completed as f64);
             obj.set(&mut cx, "filesTotalCompleted", files_total_completed)?;
-            let verification_total_completed = cx.number(progress.verification_total_completed as f64);
-            obj.set(&mut cx, "verificationTotalCompleted", verification_total_completed)?;
+            let verification_total_completed =
+                cx.number(progress.verification_total_completed as f64);
+            obj.set(
+                &mut cx,
+                "verificationTotalCompleted",
+                verification_total_completed,
+            )?;
             let current_file_downloaded = cx.number(progress.current_file_downloaded as f64);
             obj.set(&mut cx, "currentFileDownloaded", current_file_downloaded)?;
             let current_file_total_size = cx.number(progress.current_file_total_size as f64);
