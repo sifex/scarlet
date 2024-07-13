@@ -1,7 +1,6 @@
 node_modules/
 .idea/
 dist/
-agent/
 electron-builder.yml
 .DS_Store
 target/
