@@ -44,9 +44,6 @@ jobs:
                     path: target/
                     retention-days: 7
 
-            -   name: Build Rust agent
-                run: npm run build-agent-release
-
             -   name: Build for ${{ matrix.os }}
                 run: |
                     if [ "${{ matrix.os }}" == "macos-latest" ]; then
