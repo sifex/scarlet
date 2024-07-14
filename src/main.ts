@@ -21,9 +21,9 @@ export default class Main {
     static application: Electron.App;
     static browserWindow: typeof BrowserWindow;
 
-    private static isDev = (): boolean => process.argv[2] === '--dev';
-    private static scarlet_api_url = (): string => Main.isDev() ? 'http://localhost/' : 'https://scarlet.australianarmedforces.org/';
-    private static protocol = (): string => Main.isDev() ? 'scarlet-dev' : 'scarlet';
+    private static isDev = (): boolean => Main.getKeywordArguments()['dev'] as boolean;
+    private static scarlet_api_url = 'https://scarlet.australianarmedforces.org/';
+    private static protocol = 'scarlet';
     private static mods_base_url = 'https://mods.australianarmedforces.org/clans/2/repo/';
 
     private static files: Array<FileDownload> = []
@@ -34,6 +34,13 @@ export default class Main {
      * @param browserWindow BrowserWindow constructor
      */
     static main(app: App, browserWindow: typeof BrowserWindow): void {
+        /**
+         * Set the Scarlet API URL, based on Args or based on dev flag
+         */
+        if(Main.getKeywordArguments()['api-url'] as string) {
+            Main.scarlet_api_url = Main.getKeywordArguments()['api-url'] as string;
+        }
+
         if (!app.requestSingleInstanceLock()) {
             app.quit();
         }
@@ -42,7 +49,7 @@ export default class Main {
 
         Main.registerUrlHandler();
         Main.registerIPCEvents();
-        // Main.registerAutoUpdater(); // TODO: Re-enable this
+        Main.registerAutoUpdater();
 
         Main.application.on('window-all-closed', Main.onWindowAllClosed);
         Main.application.on('second-instance', Main.onSecondInstance);
@@ -75,7 +82,7 @@ export default class Main {
             })
 
 
-        Main.mainWindow.loadURL(Main.scarlet_api_url() + 'electron/intro/', {extraHeaders: 'pragma: no-cache\n'});
+        Main.mainWindow.loadURL(Main.scarlet_api_url + 'electron/intro/', {extraHeaders: 'pragma: no-cache\n'});
         Main.mainWindow.on('closed', Main.onClose);
         Main.mainWindow.once('ready-to-show', Main.onReadyToShow);
     }
@@ -107,9 +114,9 @@ export default class Main {
      * @param url The URL containing the token
      */
     private static login(url: string): Promise<void> {
-        let token = url.replace(Main.protocol() + '://', '');
+        let token = url.replace(Main.protocol + '://', '');
         return Main.mainWindow.loadURL(
-            Main.scarlet_api_url() + 'electron/steam/verify?token=' + token,
+            Main.scarlet_api_url + 'electron/steam/verify?token=' + token,
             {extraHeaders: 'pragma: no-cache\n'}
         );
     }
@@ -121,13 +128,13 @@ export default class Main {
         if (process.defaultApp) {
             if (process.argv.length >= 2) {
                 Main.application.setAsDefaultProtocolClient(
-                    Main.protocol(),
+                    Main.protocol,
                     process.execPath,
                     [path.resolve(process.argv[1])]
                 );
             }
         } else {
-            Main.application.setAsDefaultProtocolClient(Main.protocol());
+            Main.application.setAsDefaultProtocolClient(Main.protocol);
         }
     }
 
@@ -135,7 +142,7 @@ export default class Main {
      * Registers the auto-updater for the application
      */
     private static registerAutoUpdater(): void {
-        autoUpdater.checkForUpdatesAndNotify();
+        autoUpdater.checkForUpdatesAndNotify().catch(console.error);
 
         autoUpdater.on('update-available', () => {
             Main.mainWindow.webContents.send('update_available');
@@ -155,10 +162,10 @@ export default class Main {
         ipcMain.on('close', () => Main.mainWindow.close());
         ipcMain.on('minimise', () => Main.mainWindow.minimize());
         ipcMain.on('steam_login', () => {
-            shell.openExternal(Main.scarlet_api_url() + 'browser/steam/verify');
+            shell.openExternal(Main.scarlet_api_url + 'browser/steam/verify');
         });
         ipcMain.on('open_admin_page_in_browser', () => {
-            shell.openExternal(Main.scarlet_api_url() + 'admin');
+            shell.openExternal(Main.scarlet_api_url + 'admin');
         });
         ipcMain.on('quit', () => {
             Main.mainWindow = null;
@@ -204,7 +211,7 @@ export default class Main {
 
         const url = commandLine.pop().slice(0, -1);
 
-        if (url.startsWith(Main.protocol())) {
+        if (url.startsWith(Main.protocol)) {
             Main.login(url);
         }
     }
@@ -216,5 +223,31 @@ export default class Main {
      */
     private static onOpenUrl(event: Event, url: string): Promise<void> {
         return Main.login(url);
+    }
+
+    private static getKeywordArguments(): Record<string, string | boolean> {
+        const args = process.argv.slice(2); // Remove the first two elements (Electron and script path)
+        const keywordArgs: Record<string, string | boolean> = {};
+
+        for (let i = 0; i < args.length; i++) {
+            const arg = args[i];
+
+            if (arg.startsWith('--')) {
+                const keyValue = arg.slice(2).split('=');
+                if (keyValue.length === 2) {
+                    // Handle --key=value format
+                    keywordArgs[keyValue[0]] = keyValue[1].replace(/^["']|["']$/g, ''); // Remove surrounding quotes if present
+                } else if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+                    // Handle --key value format
+                    keywordArgs[keyValue[0]] = args[i + 1].replace(/^["']|["']$/g, ''); // Remove surrounding quotes if present
+                    i++; // Skip the next argument since we've used it as the value
+                } else {
+                    // Handle --flag format (boolean flag)
+                    keywordArgs[keyValue[0]] = true;
+                }
+            }
+        }
+
+        return keywordArgs;
     }
 }

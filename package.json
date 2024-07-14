@@ -1,6 +1,6 @@
 {
   "name": "scarlet",
-  "version": "1.3.3",
+  "version": "1.3.1",
   "author": "Australian Armed Forces <omega@sinn.io>",
   "description": "Scarlet is a mod updater for the Australian Armed Forces",
   "main": "./lib/app.js",
