@@ -5,14 +5,9 @@ protocols:
       - scarlet
 files:
   - "lib/**/*"
-extraResources:
-  - from: "./lib/agent.node"
-    to: "./agent.node"
-    filter:
-      - "**/*"
 win:
   target: nsis
 nsis:
   include: build/installer.nsh
   oneClick: true
-  perMachine: true
+  perMachine: false
