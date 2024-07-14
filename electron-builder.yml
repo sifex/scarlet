@@ -11,3 +11,7 @@ nsis:
   include: build/installer.nsh
   oneClick: true
   perMachine: false
+publish:
+  provider: github
+  owner: sifex
+  repo: scarlet

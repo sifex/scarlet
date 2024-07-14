@@ -54,3 +54,31 @@ function removeLeadingSlash(pathString: string) {
     // Reconstruct the path without the leading slash
     return parsedPath.dir.substring(1) + '/' + parsedPath.base;
 }
+
+
+
+export function getKeywordArguments(): Record<string, string | boolean> {
+    const args = process.argv.slice(2); // Remove the first two elements (Electron and script path)
+    const keywordArgs: Record<string, string | boolean> = {};
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+
+        if (arg.startsWith('--')) {
+            const keyValue = arg.slice(2).split('=');
+            if (keyValue.length === 2) {
+                // Handle --key=value format
+                keywordArgs[keyValue[0]] = keyValue[1].replace(/^["']|["']$/g, ''); // Remove surrounding quotes if present
+            } else if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+                // Handle --key value format
+                keywordArgs[keyValue[0]] = args[i + 1].replace(/^["']|["']$/g, ''); // Remove surrounding quotes if present
+                i++; // Skip the next argument since we've used it as the value
+            } else {
+                // Handle --flag format (boolean flag)
+                keywordArgs[keyValue[0]] = true;
+            }
+        }
+    }
+
+    return keywordArgs;
+}

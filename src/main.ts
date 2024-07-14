@@ -1,7 +1,7 @@
 import {BrowserWindow, ipcMain, shell, dialog, App} from 'electron';
 import * as path from "path";
 import {autoUpdater} from "electron-updater";
-import {fetchAndConvertXML} from './utils';
+import {fetchAndConvertXML, getKeywordArguments} from './utils';
 import {FileDownload} from './types';
 
 const {
@@ -21,7 +21,7 @@ export default class Main {
     static application: Electron.App;
     static browserWindow: typeof BrowserWindow;
 
-    private static isDev = (): boolean => Main.getKeywordArguments()['dev'] as boolean;
+    private static isDev = (): boolean => getKeywordArguments()['dev'] as boolean;
     private static scarlet_api_url = 'https://scarlet.australianarmedforces.org/';
     private static protocol = 'scarlet';
     private static mods_base_url = 'https://mods.australianarmedforces.org/clans/2/repo/';
@@ -37,8 +37,8 @@ export default class Main {
         /**
          * Set the Scarlet API URL, based on Args or based on dev flag
          */
-        if(Main.getKeywordArguments()['api-url'] as string) {
-            Main.scarlet_api_url = Main.getKeywordArguments()['api-url'] as string;
+        if(getKeywordArguments()['api-url'] as string) {
+            Main.scarlet_api_url = getKeywordArguments()['api-url'] as string;
         }
 
         if (!app.requestSingleInstanceLock()) {
@@ -223,31 +223,5 @@ export default class Main {
      */
     private static onOpenUrl(event: Event, url: string): Promise<void> {
         return Main.login(url);
-    }
-
-    private static getKeywordArguments(): Record<string, string | boolean> {
-        const args = process.argv.slice(2); // Remove the first two elements (Electron and script path)
-        const keywordArgs: Record<string, string | boolean> = {};
-
-        for (let i = 0; i < args.length; i++) {
-            const arg = args[i];
-
-            if (arg.startsWith('--')) {
-                const keyValue = arg.slice(2).split('=');
-                if (keyValue.length === 2) {
-                    // Handle --key=value format
-                    keywordArgs[keyValue[0]] = keyValue[1].replace(/^["']|["']$/g, ''); // Remove surrounding quotes if present
-                } else if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
-                    // Handle --key value format
-                    keywordArgs[keyValue[0]] = args[i + 1].replace(/^["']|["']$/g, ''); // Remove surrounding quotes if present
-                    i++; // Skip the next argument since we've used it as the value
-                } else {
-                    // Handle --flag format (boolean flag)
-                    keywordArgs[keyValue[0]] = true;
-                }
-            }
-        }
-
-        return keywordArgs;
     }
 }
