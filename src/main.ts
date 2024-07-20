@@ -112,7 +112,7 @@ export default class Main {
 
 
         if (parsedURL.searchParams.has('scarlet_api_url')) {
-            Main.scarlet_api_url = parsedURL.searchParams.get('scarlet_api_url');
+            Main.scarlet_api_url = decodeURIComponent(parsedURL.searchParams.get('scarlet_api_url'));
         }
 
         // let token = url.replace(Main.protocol + '://', '');
