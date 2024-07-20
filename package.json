@@ -5,17 +5,17 @@
   "description": "Scarlet is a mod updater for the Australian Armed Forces",
   "main": "./lib/app.js",
   "scripts": {
-    "build:agent": "cargo-cp-artifact -nc lib/agent.node -- cargo build --message-format=json-render-diagnostics",
-    "build:agent:release": "cargo-cp-artifact -nc lib/agent.node -- cargo build --release --message-format=json-render-diagnostics",
-    "build:electron": "tsc",
+    "build:agent": "npx cargo-cp-artifact -nc lib/agent.node -- cargo build --message-format=json-render-diagnostics",
+    "build:agent:release": "npx cargo-cp-artifact -nc lib/agent.node -- cargo build --release --message-format=json-render-diagnostics",
+    "build:electron": "npx tsc",
     "build": "npm run build:agent:release && npm run build:electron",
-    "start": "electron ./lib/app.js",
+    "start": "npx electron ./lib/app.js",
     "dev": "npm run build && npm run start",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "release:mac": "npm run build && electron-builder build --mac --config electron-builder.yml",
-    "release:win": "npm run build && electron-builder build --win --config electron-builder.yml",
-    "release": "npm run build && electron-builder build --win --config electron-builder.yml"
+    "pack": "npx electron-builder --dir",
+    "dist": "npx electron-builder",
+    "release:mac": "npm run build && npx electron-builder build --mac --config electron-builder.yml",
+    "release:win": "npm run build && npx electron-builder build --win --config electron-builder.yml",
+    "release": "npm run build && npx electron-builder build --win --config electron-builder.yml"
   },
   "repository": {
     "type": "git",
