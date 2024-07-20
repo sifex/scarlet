@@ -32,8 +32,8 @@ fn start_download(mut cx: FunctionContext) -> JsResult<JsPromise> {
                     .get::<JsString, _, _>(&mut cx, "path")
                     .unwrap()
                     .value(&mut cx),
-                md5_hash: obj
-                    .get::<JsString, _, _>(&mut cx, "md5_hash")
+                sha256_hash: obj
+                    .get::<JsString, _, _>(&mut cx, "sha256_hash")
                     .unwrap()
                     .value(&mut cx),
             }

@@ -4,6 +4,6 @@
 export interface FileDownload {
     url: string;
     path: string;
-    md5_hash: string;
+    sha256_hash: string;
 }
 

@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use md5::{Digest, Md5};
+use sha2::{Sha256, Digest}; // Changed from md5 to sha2
 use reqwest::Client;
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -46,7 +46,7 @@ pub enum DownloadError {
 pub struct FileToDownload {
     pub url: String,
     pub path: String,
-    pub md5_hash: String,
+    pub sha256_hash: String, // Changed from md5_hash to sha256_hash
 }
 
 pub struct DownloadManager {
@@ -94,7 +94,7 @@ impl DownloadManager {
             self.update_progress_for_file(file).await;
 
             let file_path = destination_folder.join(file.path.trim_start_matches('/'));
-            if self.file_is_valid(&file_path, &file.md5_hash).await {
+            if self.file_is_valid(&file_path, &file.sha256_hash).await {
                 self.update_progress_for_completed_file().await;
                 continue;
             }
@@ -152,7 +152,7 @@ impl DownloadManager {
     }
 
     async fn file_is_valid(&self, file_path: &Path, expected_hash: &str) -> bool {
-        if let Ok(existing_hash) = self.calculate_md5(file_path).await {
+        if let Ok(existing_hash) = self.calculate_sha256(file_path).await {
             existing_hash == expected_hash
         } else {
             false
@@ -190,7 +190,7 @@ impl DownloadManager {
             self.update_download_progress(downloaded, total_size).await;
         }
 
-        self.verify_file(file_path, &file.md5_hash).await
+        self.verify_file(file_path, &file.sha256_hash).await
     }
 
     async fn prepare_for_download(&self) {
@@ -215,7 +215,7 @@ impl DownloadManager {
         progress.status = DownloadStatus::Verifying;
         drop(progress);
 
-        let calculated_hash = self.calculate_md5(file_path).await?;
+        let calculated_hash = self.calculate_sha256(file_path).await?;
         if calculated_hash != expected_hash {
             let mut progress = self.progress.lock().await;
             progress.status = DownloadStatus::Error;
@@ -227,11 +227,12 @@ impl DownloadManager {
         Ok(())
     }
 
-    async fn calculate_md5(&self, file_path: &Path) -> Result<String, std::io::Error> {
+    async fn calculate_sha256(&self, file_path: &Path) -> Result<String, std::io::Error> {
         let mut file = File::open(file_path)?;
-        let mut hasher = Md5::new();
+        let mut hasher = Sha256::new();
         std::io::copy(&mut file, &mut hasher)?;
-        Ok(format!("{:x}", hasher.finalize()))
+        let result = hasher.finalize();
+        Ok(result.iter().map(|b| format!("{:02x}", b)).collect())
     }
 
     fn is_cancelled(&self) -> bool {

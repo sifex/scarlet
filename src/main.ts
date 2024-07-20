@@ -24,9 +24,6 @@ export default class Main {
     private static isDev = (): boolean => getKeywordArguments()['dev'] as boolean;
     private static scarlet_api_url = 'https://staging.scarlet.australianarmedforces.org/';
     private static protocol = 'scarlet';
-    private static mods_base_url = 'https://mods.australianarmedforces.org/clans/2/repo/';
-
-    private static files: Array<FileDownload> = []
 
     /**
      * Main entry point of the application
@@ -76,12 +73,6 @@ export default class Main {
             }
         });
 
-        fetchAndConvertXML(Main.mods_base_url + 'repo.xml')
-            .then((files: FileDownload[]) => {
-                Main.files=files
-            })
-
-
         Main.mainWindow.loadURL(Main.scarlet_api_url + 'electron/intro/', {extraHeaders: 'pragma: no-cache\n'});
         Main.mainWindow.on('closed', Main.onClose);
         Main.mainWindow.once('ready-to-show', Main.onReadyToShow);
@@ -114,7 +105,19 @@ export default class Main {
      * @param url The URL containing the token
      */
     private static login(url: string): Promise<void> {
-        let token = url.replace(Main.protocol + '://', '');
+
+
+        // If the query string specifies a new scarlet_api_url, update it and go to that instead.
+        const parsedURL = new URL(url);
+
+
+        if (parsedURL.searchParams.has('scarlet_api_url')) {
+            Main.scarlet_api_url = parsedURL.searchParams.get('scarlet_api_url');
+        }
+
+        // let token = url.replace(Main.protocol + '://', '');
+        const token = parsedURL.searchParams.get('token');
+
         return Main.mainWindow.loadURL(
             Main.scarlet_api_url + 'electron/steam/verify?token=' + token,
             {extraHeaders: 'pragma: no-cache\n'}
@@ -189,10 +192,14 @@ export default class Main {
         ipcMain.handle('stop_download', stop_download);
         ipcMain.handle('get_progress', get_progress);
 
-        ipcMain.handle('start_download', async (evt, destination_folder: string) => {
+        ipcMain.handle('start_download', async (
+            evt,
+            destination_folder: string,
+            files: Array<FileDownload>
+        ) => {
             return start_download(
                 destination_folder,
-                Main.files
+                files
             );
         })
     }

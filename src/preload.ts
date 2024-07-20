@@ -1,3 +1,5 @@
+import {FileDownload} from "./types";
+
 const { contextBridge, ipcRenderer } = require('electron')
 
 /**
@@ -25,7 +27,7 @@ contextBridge.exposeInMainWorld('scarlet', {
     /**
      * Rust Bindings
      */
-    start_download: (destination_folder: string) => ipcRenderer.invoke("start_download", destination_folder),
+    start_download: (destination_folder: string, files: Array<FileDownload>) => ipcRenderer.invoke("start_download", destination_folder, files),
     stop_download: () => ipcRenderer.invoke('stop_download'),
     get_progress: () => ipcRenderer.invoke('get_progress'),
     ping: () => ipcRenderer.invoke("ping"),

@@ -26,14 +26,14 @@ export async function fetchAndConvertXML(url: string): Promise<FileDownload[]> {
 
                     url: Path.join(root_url, removeLeadingSlash(file.name)),
                     path: file.name,
-                    md5_hash: file.hash
+                    sha256_hash: file.hash
                 });
             });
         } else if (jsonObj.theupdates.file) {
             fileDownloads.push({
                 url: Path.join(root_url, removeLeadingSlash(jsonObj.theupdates.file.name)),
                 path: jsonObj.theupdates.file.name,
-                md5_hash: jsonObj.theupdates.file.hash
+                sha256_hash: jsonObj.theupdates.file.hash
             });
         }
 
