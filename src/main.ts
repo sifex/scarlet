@@ -106,6 +106,7 @@ export default class Main {
      */
     private static login(url: string): Promise<void> {
 
+        console.log('Logging in with URL:', url);
 
         // If the query string specifies a new scarlet_api_url, update it and go to that instead.
         const parsedURL = new URL(url);
@@ -117,6 +118,8 @@ export default class Main {
 
         // let token = url.replace(Main.protocol + '://', '');
         const token = parsedURL.searchParams.get('token');
+
+        console.log(token)
 
         return Main.mainWindow.loadURL(
             Main.scarlet_api_url + 'electron/steam/verify?token=' + token,
