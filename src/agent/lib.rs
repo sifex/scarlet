@@ -7,6 +7,7 @@ use tokio::runtime::Runtime;
 use crate::download::{DownloadManager, FileToDownload};
 
 mod download;
+mod test;
 // mod test;
 
 lazy_static! {

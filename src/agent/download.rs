@@ -1,13 +1,16 @@
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures::StreamExt;
-use sha2::{Sha256, Digest}; // Changed from md5 to sha2
+// Changed from md5 to sha2
 use reqwest::Client;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::Mutex;
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DownloadStatus {
@@ -85,6 +88,8 @@ impl DownloadManager {
 
         self.initialize_progress(num_files).await;
 
+        let mut expected_files = HashSet::new();
+
         for (_, file) in files.iter().enumerate() {
             if self.is_cancelled() {
                 self.reset_progress().await;
@@ -93,7 +98,10 @@ impl DownloadManager {
 
             self.update_progress_for_file(file).await;
 
-            let file_path = destination_folder.join(file.path.trim_start_matches('/'));
+            let formatted_file_path = PathBuf::from(file.path.trim_start_matches('/'));
+            expected_files.insert(PathBuf::from(&formatted_file_path));
+            let file_path = destination_folder.join(&formatted_file_path);
+
             if self.file_is_valid(&file_path, &file.sha256_hash).await {
                 self.update_progress_for_completed_file().await;
                 continue;
@@ -104,7 +112,125 @@ impl DownloadManager {
             self.update_progress_for_completed_file().await;
         }
 
+        self.cleanup_files(&destination_folder, &expected_files)
+            .await?;
+
         self.finalize_progress().await;
+
+        Ok(())
+    }
+
+    async fn download_file(
+        &self,
+        file: &FileToDownload,
+        file_path: &Path,
+    ) -> Result<(), DownloadError> {
+        self.prepare_for_download().await;
+
+        let response = self.client.get(&file.url).send().await?;
+        let total_size = response.content_length().unwrap_or(0);
+
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let mut file_handle = File::create(file_path)?;
+        let mut downloaded = 0;
+        let mut stream = response.bytes_stream();
+
+        while let Some(chunk) = stream.next().await {
+            if self.is_cancelled() {
+                self.reset_progress().await;
+                return Err(DownloadError::Cancelled);
+            }
+
+            let chunk = chunk?;
+            file_handle.write_all(&chunk)?;
+            downloaded += chunk.len() as u64;
+
+            self.update_download_progress(downloaded, total_size).await;
+        }
+
+        self.verify_file(file_path, &file.sha256_hash).await
+    }
+
+    async fn verify_file(
+        &self,
+        file_path: &Path,
+        expected_hash: &str,
+    ) -> Result<(), DownloadError> {
+        let mut progress = self.progress.lock().await;
+        progress.status = DownloadStatus::Verifying;
+        drop(progress);
+
+        let calculated_hash = self.calculate_sha256(file_path).await?;
+        if calculated_hash != expected_hash {
+            let mut progress = self.progress.lock().await;
+            progress.status = DownloadStatus::Error;
+            return Err(DownloadError::ChecksumMismatch);
+        }
+
+        let mut progress = self.progress.lock().await;
+        progress.verification_total_completed += 1;
+        Ok(())
+    }
+
+    pub async fn cleanup_files(
+        &self,
+        destination_folder: &Path,
+        expected_files: &HashSet<PathBuf>,
+    ) -> std::io::Result<()> {
+        let mut progress = self.progress.lock().await;
+        progress.status = DownloadStatus::Verifying;
+        drop(progress);
+
+        let base_path = PathBuf::from(destination_folder);
+
+        // Extract managed directories
+        let managed_dirs: HashSet<PathBuf> = expected_files
+            .iter()
+            .filter_map(|path| path.components().next())
+            .map(|comp| base_path.join(comp.as_os_str()))
+            .collect();
+
+        // Collect all paths that should be kept
+        let mut keep_paths = HashSet::new();
+        for expected_file in expected_files {
+            let full_path = base_path.join(expected_file);
+            keep_paths.insert(full_path.clone());
+            // Add all parent directories to keep_paths
+            for ancestor in full_path.ancestors().skip(1) {
+                if ancestor.starts_with(&base_path) {
+                    keep_paths.insert(ancestor.to_path_buf());
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Walk the directory tree in reverse order (bottom-up)
+        for entry in WalkDir::new(destination_folder).contents_first(true) {
+            let entry = entry?;
+            let path = entry.path().to_path_buf();
+
+            // Only process files and directories within managed directories
+            if !managed_dirs.iter().any(|dir| path.starts_with(dir)) {
+                continue;
+            }
+
+            if !keep_paths.contains(&path) {
+                if entry.file_type().is_dir() {
+                    // Check if directory is empty before removing
+                    if fs::read_dir(&path)?.next().is_none() {
+                        println!("Removing empty directory: {:?}", path);
+                        fs::remove_dir(path)?;
+                    }
+                } else {
+                    println!("Removing file: {:?}", path);
+                    fs::remove_file(path)?;
+                }
+            }
+        }
 
         Ok(())
     }
@@ -159,40 +285,6 @@ impl DownloadManager {
         }
     }
 
-    async fn download_file(
-        &self,
-        file: &FileToDownload,
-        file_path: &Path,
-    ) -> Result<(), DownloadError> {
-        self.prepare_for_download().await;
-
-        let response = self.client.get(&file.url).send().await?;
-        let total_size = response.content_length().unwrap_or(0);
-
-        if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let mut file_handle = File::create(file_path)?;
-        let mut downloaded = 0;
-        let mut stream = response.bytes_stream();
-
-        while let Some(chunk) = stream.next().await {
-            if self.is_cancelled() {
-                self.reset_progress().await;
-                return Err(DownloadError::Cancelled);
-            }
-
-            let chunk = chunk?;
-            file_handle.write_all(&chunk)?;
-            downloaded += chunk.len() as u64;
-
-            self.update_download_progress(downloaded, total_size).await;
-        }
-
-        self.verify_file(file_path, &file.sha256_hash).await
-    }
-
     async fn prepare_for_download(&self) {
         let mut progress = self.progress.lock().await;
         progress.status = DownloadStatus::Downloading;
@@ -204,27 +296,6 @@ impl DownloadManager {
         let mut progress = self.progress.lock().await;
         progress.current_file_downloaded = downloaded;
         progress.current_file_total_size = total_size;
-    }
-
-    async fn verify_file(
-        &self,
-        file_path: &Path,
-        expected_hash: &str,
-    ) -> Result<(), DownloadError> {
-        let mut progress = self.progress.lock().await;
-        progress.status = DownloadStatus::Verifying;
-        drop(progress);
-
-        let calculated_hash = self.calculate_sha256(file_path).await?;
-        if calculated_hash != expected_hash {
-            let mut progress = self.progress.lock().await;
-            progress.status = DownloadStatus::Error;
-            return Err(DownloadError::ChecksumMismatch);
-        }
-
-        let mut progress = self.progress.lock().await;
-        progress.verification_total_completed += 1;
-        Ok(())
     }
 
     async fn calculate_sha256(&self, file_path: &Path) -> Result<String, std::io::Error> {

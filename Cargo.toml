@@ -10,13 +10,19 @@ crate-type = ["cdylib"]
 path = "src/agent/lib.rs"
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "fs", "test-util"] }
-tempfile = "3.10.1"
+tokio = { version = "1", features = ["full"] }
 futures = "0.3.30"
 reqwest = { version = "^0.12", features = ["stream"] }
 thiserror = "1.0.61"
 lazy_static = "1.5.0"
 sha2 = "0.11.0-pre.3"
+trash = "5.0.0"
+walkdir = "2.5.0"
+
+
+[dev-dependencies]
+mockito = "1.4.0"
+tempfile = "3.10.1"
 
 [dependencies.neon]
 version = "1.0.0"

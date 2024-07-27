@@ -28,6 +28,9 @@ jobs:
                     toolchain: stable
                     targets: ${{ matrix.target }}
 
+            -   name: Run Cargo Test
+                run: cargo test --target ${{ matrix.target }}
+                shell: bash
 
             -   name: Setup Node.js
                 uses: actions/setup-node@v4
@@ -46,12 +49,12 @@ jobs:
                     fi
                 shell: bash
 
-            - name: Upload artifacts
-              uses: actions/upload-artifact@v3
-              with:
-                  name: scarlet-${{ matrix.os }}
-                  path: |
-                      dist/*.dmg
-                      dist/*.exe
-                      dist/*.zip
-                  if-no-files-found: error
+            -   name: Upload artifacts
+                uses: actions/upload-artifact@v3
+                with:
+                    name: scarlet-${{ matrix.os }}
+                    path: |
+                        dist/*.dmg
+                        dist/*.exe
+                        dist/*.zip
+                    if-no-files-found: error

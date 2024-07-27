@@ -1,151 +1,233 @@
 #[cfg(test)]
 mod tests {
-    use mockito;
-    use tokio::runtime::Runtime;
 
-    use crate::download::{DownloadManager, DownloadStatus, FileToDownload};
+    use crate::download::DownloadManager;
+    use std::collections::HashSet;
+    use std::fs::{self, File};
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use tempfile::TempDir;
 
-    fn create_test_files() -> Vec<FileToDownload> {
-        vec![
-            FileToDownload {
-                url: "http://example.com/file1.txt".to_string(),
-                path: "file1.txt".to_string(),
-                md5_hash: "d41d8cd98f00b204e9800998ecf8427e".to_string(),
-            },
-            FileToDownload {
-                url: "http://example.com/file2.txt".to_string(),
-                path: "file2.txt".to_string(),
-                md5_hash: "098f6bcd4621d373cade4e832627b4f6".to_string(),
-            },
-        ]
+    fn create_test_file(dir: &Path, path: &str, content: &str) -> std::io::Result<()> {
+        let file_path = dir.join(path);
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = File::create(file_path)?;
+        file.write_all(content.as_bytes())?;
+        Ok(())
     }
 
-    #[test]
-    fn test_new_download_manager() {
-        let dm = DownloadManager::new();
-        let rt = Runtime::new().unwrap();
-        let progress = rt.block_on(dm.get_progress());
+    #[tokio::test]
+    async fn test_cleanup_files_with_expected_files() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let base_path = temp_dir.path();
 
-        assert_eq!(progress.status, DownloadStatus::NotReady);
-        assert_eq!(progress.files_total, 0);
-        assert_eq!(progress.files_total_completed, 0);
-        assert_eq!(progress.verification_total_completed, 0);
+        // Create test file structure
+        create_test_file(base_path, "managed_dir1/file1.txt", "content")?;
+        create_test_file(base_path, "managed_dir1/subdir/file2.txt", "content")?;
+        create_test_file(base_path, "managed_dir1/subdir/unexpected.txt", "content")?;
+        create_test_file(base_path, "managed_dir2/file3.txt", "content")?;
+        create_test_file(
+            base_path,
+            "managed_dir2/unexpected_dir/unexpected.txt",
+            "content",
+        )?;
+        create_test_file(base_path, "unmanaged_file.txt", "content")?;
+
+        let mut expected_files = HashSet::new();
+        expected_files.insert(PathBuf::from("managed_dir1/file1.txt"));
+        expected_files.insert(PathBuf::from("managed_dir1/subdir/file2.txt"));
+        expected_files.insert(PathBuf::from("managed_dir2/file3.txt"));
+
+        let download_manager = DownloadManager::new();
+        download_manager
+            .cleanup_files(base_path, &expected_files)
+            .await?;
+
+        // Check that expected files still exist
+        assert!(base_path.join("managed_dir1/file1.txt").exists());
+        assert!(base_path.join("managed_dir1/subdir/file2.txt").exists());
+        assert!(base_path.join("managed_dir2/file3.txt").exists());
+
+        // Check that unexpected files within managed directories were removed
+        assert!(!base_path
+            .join("managed_dir1/subdir/unexpected.txt")
+            .exists());
+        assert!(!base_path
+            .join("managed_dir2/unexpected_dir/unexpected.txt")
+            .exists());
+
+        // Check that unmanaged files were not touched
+        assert!(base_path.join("unmanaged_file.txt").exists());
+
+        // Check that empty directories were removed
+        assert!(!base_path.join("managed_dir2/unexpected_dir").exists());
+
+        Ok(())
     }
 
-    #[test]
-    fn test_cancel_download() {
-        let dm = DownloadManager::new();
-        dm.cancel();
-        assert!(dm.cancellation_flag.load(std::sync::atomic::Ordering::SeqCst));
+    #[tokio::test]
+    async fn test_cleanup_files_with_nested_empty_dirs() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let base_path = temp_dir.path();
+
+        // Create test file structure with empty directories
+        fs::create_dir_all(base_path.join("example_managed_directory/@AAF_Modern/empty_dir"))?;
+        create_test_file(base_path, "example_managed_directory/file1.txt", "content")?;
+
+        let mut expected_files = HashSet::new();
+        expected_files.insert(PathBuf::from("example_managed_directory/file1.txt"));
+
+        let download_manager = DownloadManager::new();
+        download_manager
+            .cleanup_files(base_path, &expected_files)
+            .await?;
+
+        // Check that expected file still exists
+        assert!(base_path
+            .join("example_managed_directory/file1.txt")
+            .exists());
+
+        // Check that empty directories were removed
+        assert!(!base_path
+            .join("example_managed_directory/@AAF_Modern/empty_dir")
+            .exists());
+        assert!(!base_path
+            .join("example_managed_directory/@AAF_Modern")
+            .exists());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_files_with_non_managed_dirs() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let base_path = temp_dir.path();
+
+        // Create test file structure with non-managed directories
+        create_test_file(base_path, "example_managed_directory/file1.txt", "content")?;
+        create_test_file(base_path, "NonManaged/file2.txt", "content")?;
+        create_test_file(base_path, "file2.txt", "content")?;
+
+        let mut expected_files = HashSet::new();
+        expected_files.insert(PathBuf::from("example_managed_directory/"));
+        expected_files.insert(PathBuf::from("example_managed_directory/file1.txt"));
+
+        let download_manager = DownloadManager::new();
+        download_manager
+            .cleanup_files(base_path, &expected_files)
+            .await?;
+
+        // Check that expected file still exists
+        assert!(base_path
+            .join("example_managed_directory/file1.txt")
+            .exists());
+
+        // Check that non-managed directory and its contents were not touched
+        assert!(base_path.join("NonManaged/file2.txt").exists());
+        assert!(base_path.join("file2.txt").exists());
+
+        Ok(())
     }
 
     // #[tokio::test]
-    // async fn test_download_progress_update() {
-    //     let dm = DownloadManager::new();
-    //     let files = create_test_files();
-    //     let destination = "test_destination";
-    // 
-    //     // Start the download in a separate task
-    //     let dm_clone = dm.clone();
-    //     tokio::spawn(async move {
-    //         let _ = dm_clone.download(destination, files).await;
-    //     });
-    // 
-    //     // Wait a bit for the download to start
-    //     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    // 
-    //     let progress = dm.get_progress().await;
-    // 
-    //     // Check if the progress is updated correctly
-    //     assert_ne!(progress.status, DownloadStatus::NotReady);
-    //     assert_eq!(progress.files_total, 2);
-    //     assert!(progress.files_total_completed <= 2);
-    //     assert!(progress.verification_total_completed <= 2);
-    //     assert!(progress.current_file_downloaded <= progress.current_file_total_size);
-    // }
-    // 
-    // #[tokio::test]
-    // async fn test_download_file_success() {
+    // async fn test_download_and_verify() -> Result<(), Box<dyn std::error::Error>> {
+    //     let temp_dir = TempDir::new()?;
+    //     let base_path = temp_dir.path();
+    //
+    //     let test_file_content = "Test content";
+    //     let test_file_hash = "d5ef9984be135ec74cbc5dee24825199ca433e1ffd7a2fb22db12a3c5324ea1d"; // SHA256 hash of "Test content"
+    //
     //     let mut server = mockito::Server::new();
-    //     let mock = server.mock("GET", "/file1.txt")
+    //     let mock = server.mock("GET", "/test_file.txt")
     //         .with_status(200)
     //         .with_header("content-type", "text/plain")
-    //         .with_body("Hello, World!")
+    //         .with_body(test_file_content)
     //         .create();
-    // 
-    //     let dm = DownloadManager::new();
+    //
     //     let files = vec![
     //         FileToDownload {
-    //             url: server.url() + "/file1.txt",
-    //             path: "file1.txt".to_string(),
-    //             md5_hash: "65a8e27d8879283831b664bd8b7f0ad4".to_string(), // MD5 of "Hello, World!"
+    //             url: server.url() + "/test_file.txt",
+    //             path: "test_file.txt".to_string(),
+    //             sha256_hash: test_file_hash.to_string(),
     //         },
     //     ];
-    // 
-    //     let temp_dir = tempfile::tempdir().unwrap();
-    //     let result = dm.download(temp_dir.path(), files).await;
-    // 
-    //     assert!(result.is_ok());
+    //
+    //     let download_manager = DownloadManager::new();
+    //     download_manager.download(base_path, files).await?;
+    //
+    //     // Verify that the file was downloaded and has the correct content
+    //     let downloaded_file_path = base_path.join("test_file.txt");
+    //     assert!(downloaded_file_path.exists());
+    //     let downloaded_content = fs::read_to_string(downloaded_file_path)?;
+    //     assert_eq!(downloaded_content, test_file_content);
+    //
     //     mock.assert();
-    // 
-    //     let file_path = temp_dir.path().join("file1.txt");
-    //     assert!(file_path.exists());
-    // 
-    //     let content = std::fs::read_to_string(file_path).unwrap();
-    //     assert_eq!(content, "Hello, World!");
+    //
+    //     Ok(())
     // }
-    // 
+    //
     // #[tokio::test]
-    // async fn test_download_file_checksum_mismatch() {
+    // async fn test_download_with_invalid_hash() -> Result<(), Box<dyn std::error::Error>> {
+    //     let temp_dir = TempDir::new()?;
+    //     let base_path = temp_dir.path();
+    //
+    //     let test_file_content = "Test content";
+    //     let invalid_hash = "invalid_hash";
+    //
     //     let mut server = mockito::Server::new();
-    //     let mock = server.mock("GET", "/file1.txt")
+    //     let mock = server.mock("GET", "/test_file.txt")
     //         .with_status(200)
     //         .with_header("content-type", "text/plain")
-    //         .with_body("Hello, World!")
+    //         .with_body(test_file_content)
     //         .create();
-    // 
-    //     let dm = DownloadManager::new();
+    //
     //     let files = vec![
     //         FileToDownload {
-    //             url: server.url() + "/file1.txt",
-    //             path: "file1.txt".to_string(),
-    //             md5_hash: "incorrect_hash".to_string(),
+    //             url: server.url() + "/test_file.txt",
+    //             path: "test_file.txt".to_string(),
+    //             sha256_hash: invalid_hash.to_string(),
     //         },
     //     ];
-    // 
-    //     let temp_dir = tempfile::tempdir().unwrap();
-    //     let result = dm.download(temp_dir.path(), files).await;
-    // 
+    //
+    //     let download_manager = DownloadManager::new();
+    //     let result = download_manager.download(base_path, files).await;
+    //
     //     assert!(result.is_err());
+    //     assert!(matches!(result, Err(DownloadError::ChecksumMismatch)));
+    //
     //     mock.assert();
-    // 
-    //     let file_path = temp_dir.path().join("file1.txt");
-    //     assert!(file_path.exists()); // The file is still downloaded, but the checksum fails
+    //
+    //     Ok(())
     // }
-    // 
+    //
     // #[tokio::test]
-    // async fn test_download_file_network_error() {
+    // async fn test_download_with_network_error() -> Result<(), Box<dyn std::error::Error>> {
+    //     let temp_dir = TempDir::new()?;
+    //     let base_path = temp_dir.path();
+    //
     //     let mut server = mockito::Server::new();
-    //     let mock = server.mock("GET", "/file1.txt")
+    //     let mock = server.mock("GET", "/test_file.txt")
     //         .with_status(404)
     //         .create();
-    // 
-    //     let dm = DownloadManager::new();
+    //
     //     let files = vec![
     //         FileToDownload {
-    //             url: server.url() + "/file1.txt",
-    //             path: "file1.txt".to_string(),
-    //             md5_hash: "some_hash".to_string(),
+    //             url: server.url() + "/test_file.txt",
+    //             path: "test_file.txt".to_string(),
+    //             sha256_hash: "some_hash".to_string(),
     //         },
     //     ];
-    // 
-    //     let temp_dir = tempfile::tempdir().unwrap();
-    //     let result = dm.download(temp_dir.path(), files).await;
-    // 
+    //
+    //     let download_manager = DownloadManager::new();
+    //     let result = download_manager.download(base_path, files).await;
+    //
     //     assert!(result.is_err());
+    //     assert!(matches!(result, Err(DownloadError::HttpError(_))));
+    //
     //     mock.assert();
-    // 
-    //     let file_path = temp_dir.path().join("file1.txt");
-    //     assert!(!file_path.exists()); // The file should not be created due to the network error
+    //
+    //     Ok(())
     // }
 }
