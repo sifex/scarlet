@@ -10,5 +10,10 @@ An Australian Armed Forces Initiative - visit them at https://australianarmedfor
 
 Download the Scarlet Mod Downloader by checking [clicking here](https://github.com/sifex/scarlet/releases) and downloading the latest release
 
- 
+## Development
 
+For releasing, use `release-it` to create a new release. The CI / CD pipeline should take over from there.
+
+```bash
+npx release-it pre-alpha
+```
