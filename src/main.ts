@@ -22,7 +22,7 @@ export default class Main {
     static browserWindow: typeof BrowserWindow;
 
     private static isDev = (): boolean => getKeywordArguments()['dev'] as boolean;
-    private static scarlet_api_url = 'https://staging.scarlet.australianarmedforces.org/';
+    private static scarlet_api_url = 'https://scarlet.australianarmedforces.org/';
     private static protocol = 'scarlet';
 
     /**
