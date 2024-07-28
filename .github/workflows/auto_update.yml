@@ -1,0 +1,38 @@
+name: Auto-Update Dependencies and Version
+
+on:
+    schedule:
+        # Runs every 4 months
+        - cron: '0 0 1 */4 *'
+
+jobs:
+    update-dependencies:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out Git repository
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 'latest'
+
+            - name: Update NPM dependencies
+              run: |
+                  npm update
+                  git config --local user.email "action@github.com"
+                  git config --local user.name "GitHub Action"
+                  git commit -am "Update NPM dependencies" || echo "No changes to commit"
+
+            - name: Bump version
+              run: |
+                  npm install -g release-it
+                  npx release-it minor --ci
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Push changes
+              uses: ad-m/github-push-action@master
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  branch: ${{ github.ref }}
