@@ -13,9 +13,9 @@
     "dev": "npm run build && npm run start",
     "pack": "npx electron-builder --dir",
     "dist": "npx electron-builder",
-    "release:mac": "npm run build && npx electron-builder build --mac --config electron-builder.yml",
-    "release:win": "npm run build && npx electron-builder build --win --config electron-builder.yml",
-    "release": "npm run build && npx electron-builder build --win --config electron-builder.yml"
+    "release:mac": "npm run build && npx electron-builder build --mac -p onTag --config electron-builder.yml",
+    "release:win": "npm run build && npx electron-builder build --win -p onTag --config electron-builder.yml",
+    "release": "npm run build && npx electron-builder build --win -p onTag --config electron-builder.yml"
   },
   "repository": {
     "type": "git",
