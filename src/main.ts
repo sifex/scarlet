@@ -117,7 +117,7 @@ export default class Main {
         }
 
         // let token = url.replace(Main.protocol + '://', '');
-        const token = parsedURL.searchParams.get('token');
+        const token = parsedURL.searchParams.get('token') ?? '';
 
         console.log(token)
 

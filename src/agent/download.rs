@@ -1,11 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures::StreamExt;
-// Changed from md5 to sha2
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -15,9 +14,8 @@ use walkdir::WalkDir;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DownloadStatus {
     Ready,
-    InitialCheck,
+    Initiating,
     Downloading,
-    Verifying,
     Done,
     Error,
 }
@@ -31,6 +29,7 @@ pub struct DownloadProgress {
     pub current_file_downloaded: u64,
     pub current_file_total_size: u64,
     pub current_file_path: String,
+    pub failed_files: HashMap<String, String>,
 }
 
 #[derive(Debug, Error)]
@@ -49,7 +48,7 @@ pub enum DownloadError {
 pub struct FileToDownload {
     pub url: String,
     pub path: String,
-    pub sha256_hash: String, // Changed from md5_hash to sha256_hash
+    pub sha256_hash: String,
 }
 
 pub struct DownloadManager {
@@ -70,6 +69,7 @@ impl DownloadManager {
                 current_file_downloaded: 0,
                 current_file_total_size: 0,
                 current_file_path: String::new(),
+                failed_files: HashMap::new(),
             })),
             cancellation_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
@@ -107,9 +107,14 @@ impl DownloadManager {
                 continue;
             }
 
-            self.download_file(file, &file_path).await?;
-
-            self.update_progress_for_completed_file().await;
+            match self.download_file(file, &file_path).await {
+                Ok(_) => self.update_progress_for_completed_file().await,
+                Err(e) => {
+                    self.update_progress_for_failed_file(file, &e.to_string()).await;
+                    // Continue with the next file instead of returning early
+                    continue;
+                }
+            }
         }
 
         self.cleanup_files(&destination_folder, &expected_files)
@@ -159,19 +164,14 @@ impl DownloadManager {
         file_path: &Path,
         expected_hash: &str,
     ) -> Result<(), DownloadError> {
-        let mut progress = self.progress.lock().await;
-        progress.status = DownloadStatus::Verifying;
-        drop(progress);
-
         let calculated_hash = self.calculate_sha256(file_path).await?;
         if calculated_hash != expected_hash {
-            let mut progress = self.progress.lock().await;
-            progress.status = DownloadStatus::Error;
             return Err(DownloadError::ChecksumMismatch);
         }
 
         let mut progress = self.progress.lock().await;
         progress.verification_total_completed += 1;
+        
         Ok(())
     }
 
@@ -180,10 +180,6 @@ impl DownloadManager {
         destination_folder: &Path,
         expected_files: &HashSet<PathBuf>,
     ) -> std::io::Result<()> {
-        let mut progress = self.progress.lock().await;
-        progress.status = DownloadStatus::Verifying;
-        drop(progress);
-
         let base_path = PathBuf::from(destination_folder);
 
         // Extract managed directories
@@ -244,22 +240,24 @@ impl DownloadManager {
         progress.current_file_downloaded = 0;
         progress.current_file_total_size = 0;
         progress.current_file_path = String::new();
+        progress.failed_files.clear();
     }
 
     async fn initialize_progress(&self, num_files: usize) {
         let mut progress = self.progress.lock().await;
-        progress.status = DownloadStatus::InitialCheck;
+        progress.status = DownloadStatus::Initiating;
         progress.files_total = num_files;
         progress.files_total_completed = 0;
         progress.verification_total_completed = 0;
         progress.current_file_downloaded = 0;
         progress.current_file_total_size = 0;
         progress.current_file_path = String::new();
+        progress.failed_files.clear();
     }
 
     async fn update_progress_for_file(&self, file: &FileToDownload) {
         let mut progress = self.progress.lock().await;
-        progress.status = DownloadStatus::InitialCheck;
+        progress.status = DownloadStatus::Downloading;
         progress.current_file_path = file.path.clone();
     }
 
@@ -271,9 +269,18 @@ impl DownloadManager {
         progress.current_file_total_size = 0;
     }
 
+    async fn update_progress_for_failed_file(&self, file: &FileToDownload, error: &str) {
+        let mut progress = self.progress.lock().await;
+        progress.failed_files.insert(file.path.clone(), error.to_string());
+    }
+
     async fn finalize_progress(&self) {
         let mut progress = self.progress.lock().await;
-        progress.status = DownloadStatus::Done;
+        progress.status = if progress.failed_files.is_empty() {
+            DownloadStatus::Done
+        } else {
+            DownloadStatus::Error
+        };
         progress.verification_total_completed = progress.files_total;
     }
 
