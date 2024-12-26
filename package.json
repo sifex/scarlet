@@ -1,6 +1,6 @@
 {
   "name": "scarlet",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "author": "Australian Armed Forces <omega@sinn.io>",
   "description": "Scarlet is a mod updater for the Australian Armed Forces",
   "main": "./lib/app.js",
@@ -24,14 +24,15 @@
   "private": true,
   "productName": "Scarlet",
   "dependencies": {
-    "electron-updater": "^4.6.1",
-    "fast-xml-parser": "^4.4.0"
+    "electron-updater": "^6.3.9",
+    "fast-xml-parser": "^4.5.1"
   },
   "devDependencies": {
+    "@types/semver": "^7.5.8",
     "cargo-cp-artifact": "^0.1",
     "copyfiles": "^2.4.1",
-    "electron": "31.2.0",
-    "electron-builder": "^24.13.3",
-    "typescript": "^5.0.4"
+    "electron": "33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2"
   }
 }

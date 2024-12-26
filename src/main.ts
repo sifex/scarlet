@@ -1,5 +1,6 @@
 import {BrowserWindow, ipcMain, shell, dialog, App} from 'electron';
 import * as path from "path";
+import * as fs from "fs";
 import {autoUpdater} from "electron-updater";
 import {fetchAndConvertXML, getKeywordArguments} from './utils';
 import {FileDownload} from './types';
@@ -188,6 +189,20 @@ export default class Main {
             }).catch(err => {
                 console.error(err);
             });
+        });
+
+        ipcMain.on('open_install_dir_in_explorer', (evt, install_dir: string) => {
+            // Check to see if the install directory exists
+            if (fs.existsSync(install_dir)) {
+                shell.openPath(install_dir);
+            } // else if check one level up
+            else if (fs.existsSync(install_dir.split(path.sep).slice(0, -1).join(path.sep))) {
+                console.log(install_dir);
+                console.log(install_dir.split(path.sep).slice(0, -1).join(path.sep));
+                shell.openPath(install_dir.split(path.sep).slice(0, -1).join(path.sep));
+            } else {
+                console.error('Invalid install directory:', install_dir);
+            }
         });
 
         ipcMain.handle('ping', ping);

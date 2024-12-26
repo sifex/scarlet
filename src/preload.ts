@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('scarlet', {
      */
     open_choose_install_dir: (existing_directory: string) => ipcRenderer.send("open_choose_install_dir", existing_directory),
     on_select_install_dir: (callback: (_: any) => any) => ipcRenderer.on('on_select_install_dir', callback),
+    open_install_dir_in_explorer: (dir: string) => ipcRenderer.send("open_install_dir_in_explorer", dir),
 
     /**
      * Rust Bindings
